@@ -263,7 +263,7 @@ const ExecutiveSummaryContent = ({ data, reportMode = false }: { data: Dashboard
   const denialRate = totalCheckoutsAttempted > 0 ? ((totalDenials / totalCheckoutsAttempted) * 100).toFixed(1) : '0';
 
   return (
-    <div className={`p-8 rounded-3xl ${reportMode ? 'bg-slate-50 border border-slate-200 text-slate-900' : 'bg-gradient-to-br from-[#1e2943] to-[#1871bd] text-white shadow-xl'}`}>
+    <div className={`p-8 rounded-xl ${reportMode ? 'bg-slate-50 border border-slate-200 text-slate-900' : 'bg-gradient-to-br from-[#1e2943] to-[#1871bd] text-white shadow-sm'}`}>
       <h2 className={`text-2xl font-bold mb-4 flex items-center gap-2 ${reportMode ? 'text-[#1871bd]' : 'text-white'}`}>
         <Info size={24} /> Executive Summary
       </h2>
@@ -314,51 +314,83 @@ const ExecutiveSummaryContent = ({ data, reportMode = false }: { data: Dashboard
 };
 
 // --- PDF REPORT TEMPLATE ---
+const ReportPageFooter = ({ serverName, pageNum }: { serverName: string; pageNum: number }) => (
+  <div className="absolute bottom-10 left-16 right-16 flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-widest border-t border-slate-100 pt-4">
+    <span>Ellison Technologies — {serverName} License Audit</span>
+    <span>Page {String(pageNum).padStart(2, '0')}</span>
+  </div>
+);
+
+const ReportPageHeader = ({ serverName }: { serverName: string }) => (
+  <div className="flex justify-between items-center mb-12">
+    <div className="flex items-center gap-4">
+      <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-8" />
+      <div className="w-px h-8 bg-slate-200" />
+      <div>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#1e2943]">SNL License Audit</h1>
+        <p className="text-slate-400 font-semibold uppercase tracking-widest text-[10px]">{serverName}</p>
+      </div>
+    </div>
+    <div className="text-right">
+      <p className="text-slate-400 font-semibold text-[10px] uppercase">Generated</p>
+      <p className="font-semibold text-sm text-slate-600">{new Date().toLocaleDateString()}</p>
+    </div>
+  </div>
+);
+
 const MasterReport = ({ data }: { data: DashboardData }) => {
   const topUsers = Object.entries(data.userStats)
     .map(([name, stats]) => ({ name, ...stats }))
     .sort((a,b) => b.sessions - a.sessions)
-    .slice(0, 10);
+    .slice(0, 15);
 
   const topFeatures = (Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][])
     .map(([name, stats]) => ({ name, value: stats.checkouts }))
     .sort((a,b) => b.value - a.value)
     .slice(0, 10);
 
+  const totalSessions = data.sessions.length;
+  const totalDenials = data.denials.length;
+  const denialRate = (totalSessions + totalDenials) > 0 ? ((totalDenials / (totalSessions + totalDenials)) * 100).toFixed(1) : '0';
+  const avgDuration = formatDuration(data.sessions.reduce((a, s) => a + (s.duration || 0), 0) / (totalSessions || 1));
+
   return (
-    <div className="p-0 bg-white text-slate-900 w-[1000px] overflow-hidden">
-      {/* Page 1: Overview & Executive Summary */}
-      <div id="report-page-1" className="p-20 h-[1414px] flex flex-col relative border-b border-slate-100">
-        <div className="flex justify-between items-center mb-16">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-[#1871bd] rounded-2xl">
-              <Database size={32} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-black tracking-tighter text-[#1e2943]">SNL Analytics</h1>
-              <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Executive Performance Report</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-slate-400 font-bold text-xs">REPORT GENERATED</p>
-            <p className="font-bold">{new Date().toLocaleDateString()}</p>
+    <div className="p-0 bg-white text-slate-900 w-[1000px] overflow-hidden" style={{ fontFamily: 'Inter, sans-serif' }}>
+
+      {/* Page 1: Cover + Executive Summary */}
+      <div id="report-page-1" className="p-16 h-[1414px] flex flex-col relative">
+        {/* Cover header */}
+        <div className="flex items-center gap-6 mb-16">
+          <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-10" />
+          <div className="w-px h-10 bg-slate-200" />
+          <div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-[#1e2943]">SNL License Audit</h1>
+            <p className="text-slate-400 font-semibold uppercase tracking-widest text-xs mt-1">Executive Performance Report — {data.metadata.serverName}</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-6 mb-12">
-          <StatCard title="Total Sessions" value={data.sessions.length.toLocaleString()} icon={Clock} color={COLORS.brandMid} reportMode />
-          <StatCard title="Active Users" value={Object.keys(data.userStats).length} icon={Users} color={COLORS.brandBlue} reportMode />
-          <StatCard title="License Denials" value={data.denials.length} icon={ShieldAlert} color={COLORS.error} reportMode />
-          <StatCard title="Avg Duration" value={formatDuration(data.sessions.reduce((acc, s) => acc + (s.duration || 0), 0) / (data.sessions.length || 1))} icon={Activity} color={COLORS.success} reportMode />
+        {/* KPI strip */}
+        <div className="grid grid-cols-5 gap-4 mb-10">
+          {[
+            { label: 'Total Sessions', val: totalSessions.toLocaleString(), color: '#1871bd' },
+            { label: 'Active Users', val: String(Object.keys(data.userStats).length), color: '#46b6e3' },
+            { label: 'License Denials', val: String(totalDenials), color: '#ef4444' },
+            { label: 'Denial Rate', val: denialRate + '%', color: Number(denialRate) > 5 ? '#ef4444' : '#10b981' },
+            { label: 'Avg Duration', val: avgDuration, color: '#10b981' },
+          ].map(kpi => (
+            <div key={kpi.label} className="p-4 rounded-lg border border-slate-100 bg-slate-50">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{kpi.label}</p>
+              <p className="text-2xl font-extrabold" style={{ color: kpi.color }}>{kpi.val}</p>
+            </div>
+          ))}
         </div>
 
         <ExecutiveSummaryContent data={data} reportMode />
 
-        <div className="mt-12 flex-1">
-          <h3 className="text-xl font-black mb-8 flex items-center gap-3 text-[#1e2943]">
-             Utilization Trend Analysis
-          </h3>
-          <div className="h-[400px] w-full bg-slate-50 p-8 rounded-3xl border border-slate-100">
+        {/* Usage trend */}
+        <div className="mt-10 flex-1">
+          <h3 className="text-lg font-extrabold mb-6 text-[#1e2943]">Utilization Trend</h3>
+          <div className="h-[340px] w-full bg-slate-50 p-6 rounded-lg border border-slate-100">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data.timeSeriesUsage}>
                 <defs>
@@ -368,77 +400,149 @@ const MasterReport = ({ data }: { data: DashboardData }) => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="time" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                <Area type="monotone" dataKey="count" stroke={COLORS.brandMid} fillOpacity={1} fill="url(#colorUsageReport)" strokeWidth={3} />
+                <XAxis dataKey="time" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+                <Area type="monotone" dataKey="count" stroke={COLORS.brandMid} fillOpacity={1} fill="url(#colorUsageReport)" strokeWidth={2.5} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="absolute bottom-10 left-20 right-20 flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-widest border-t border-slate-50 pt-4">
-           <span>{data.metadata.serverName} - License Performance Audit</span>
-           <span>Page 01</span>
-        </div>
+        <ReportPageFooter serverName={data.metadata.serverName} pageNum={1} />
       </div>
 
-      {/* Page 2: Inventory Details */}
-      <div id="report-page-2" className="p-20 h-[1414px] flex flex-col relative border-b border-slate-100">
-        <h2 className="text-3xl font-black mb-10 text-[#1e2943]">License Inventory Breakdown</h2>
+      {/* Page 2: License Inventory */}
+      <div id="report-page-2" className="p-16 h-[1414px] flex flex-col relative border-t border-slate-100">
+        <ReportPageHeader serverName={data.metadata.serverName} />
+        <h2 className="text-2xl font-extrabold mb-8 text-[#1e2943]">License Inventory</h2>
         <div className="flex-1 overflow-hidden">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Feature</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Total Checkouts</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Duration</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Denials</th>
+              <tr className="border-b-2 border-[#1871bd]">
+                <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">Feature</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Checkouts</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Total Duration</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Avg Duration</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Denials</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {(Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][]).slice(0, 18).map(([name, stats]) => (
+              {(Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][])
+                .sort((a, b) => b[1].checkouts - a[1].checkouts)
+                .slice(0, 22).map(([name, stats]) => (
                 <tr key={name}>
-                  <td className="px-6 py-4 text-sm font-bold">{name}</td>
-                  <td className="px-6 py-4 text-sm">{stats.checkouts}</td>
-                  <td className="px-6 py-4 text-sm">{formatDuration(stats.totalDuration)}</td>
-                  <td className={`px-6 py-4 text-sm font-black ${stats.denials > 0 ? 'text-red-500' : 'text-slate-300'}`}>{stats.denials}</td>
+                  <td className="px-4 py-3 text-sm font-semibold">{name}</td>
+                  <td className="px-4 py-3 text-sm text-right">{stats.checkouts}</td>
+                  <td className="px-4 py-3 text-sm text-right text-slate-500">{formatDuration(stats.totalDuration)}</td>
+                  <td className="px-4 py-3 text-sm text-right text-slate-500">{formatDuration(stats.totalDuration / (stats.checkouts || 1))}</td>
+                  <td className={`px-4 py-3 text-sm text-right font-bold ${stats.denials > 0 ? 'text-red-500' : 'text-slate-300'}`}>{stats.denials}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={`text-[9px] font-bold uppercase px-2 py-1 rounded ${
+                      stats.denials > 5 ? 'bg-red-50 text-red-500' : stats.checkouts === 0 ? 'bg-slate-50 text-slate-400' : 'bg-green-50 text-green-600'
+                    }`}>{stats.denials > 5 ? 'Undersized' : stats.checkouts === 0 ? 'Idle' : 'OK'}</span>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-6 text-xs text-slate-400 italic font-medium">Showing top 18 license features by frequency.</p>
         </div>
 
-        <div className="mt-12 grid grid-cols-2 gap-10">
-           <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100">
-              <h4 className="text-sm font-black mb-6 uppercase text-[#1871bd]">Top Features</h4>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topFeatures}>
-                    <Bar dataKey="value" fill={COLORS.brandMid} radius={[5, 5, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-           </div>
-           <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100">
-              <h4 className="text-sm font-black mb-6 uppercase text-[#1871bd]">User Power distribution</h4>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={topUsers} dataKey="sessions" cx="50%" cy="50%" innerRadius={40} outerRadius={70}>
-                      {topUsers.map((e,i) => <Cell key={i} fill={COLORS.chart[i % COLORS.chart.length]} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-           </div>
+        <div className="mt-8 grid grid-cols-2 gap-8">
+          <div className="bg-slate-50 p-6 rounded-lg border border-slate-100">
+            <h4 className="text-xs font-bold mb-4 uppercase text-[#1871bd]">Top Features by Checkouts</h4>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={topFeatures}>
+                  <Bar dataKey="value" fill={COLORS.brandMid} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="bg-slate-50 p-6 rounded-lg border border-slate-100">
+            <h4 className="text-xs font-bold mb-4 uppercase text-[#1871bd]">User Session Distribution</h4>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={topUsers.slice(0, 8)} dataKey="sessions" cx="50%" cy="50%" innerRadius={35} outerRadius={65}>
+                    {topUsers.slice(0, 8).map((e,i) => <Cell key={i} fill={COLORS.chart[i % COLORS.chart.length]} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
 
-        <div className="absolute bottom-10 left-20 right-20 flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-widest border-t border-slate-50 pt-4">
-           <span>{data.metadata.serverName} - License Performance Audit</span>
-           <span>Page 02</span>
-        </div>
+        <ReportPageFooter serverName={data.metadata.serverName} pageNum={2} />
       </div>
+
+      {/* Page 3: User Analysis */}
+      <div id="report-page-3" className="p-16 h-[1414px] flex flex-col relative border-t border-slate-100">
+        <ReportPageHeader serverName={data.metadata.serverName} />
+        <h2 className="text-2xl font-extrabold mb-8 text-[#1e2943]">User Analysis</h2>
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b-2 border-[#1871bd]">
+              <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">User</th>
+              <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Sessions</th>
+              <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Total Duration</th>
+              <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Avg Duration</th>
+              <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500 text-right">Denials</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {(Object.entries(data.userStats) as [string, { sessions: number; totalDuration: number; denials: number }][])
+              .sort((a,b) => b[1].sessions - a[1].sessions)
+              .slice(0, 30).map(([name, stats]) => (
+              <tr key={name}>
+                <td className="px-4 py-2.5 text-sm font-semibold">{name}</td>
+                <td className="px-4 py-2.5 text-sm text-right">{stats.sessions}</td>
+                <td className="px-4 py-2.5 text-sm text-right text-slate-500">{formatDuration(stats.totalDuration)}</td>
+                <td className="px-4 py-2.5 text-sm text-right text-slate-500">{formatDuration(stats.totalDuration / (stats.sessions || 1))}</td>
+                <td className={`px-4 py-2.5 text-sm text-right font-bold ${stats.denials > 0 ? 'text-red-500' : 'text-slate-300'}`}>{stats.denials}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <ReportPageFooter serverName={data.metadata.serverName} pageNum={3} />
+      </div>
+
+      {/* Page 4: Denial Log */}
+      {data.denials.length > 0 && (
+        <div id="report-page-4" className="p-16 h-[1414px] flex flex-col relative border-t border-slate-100">
+          <ReportPageHeader serverName={data.metadata.serverName} />
+          <h2 className="text-2xl font-extrabold mb-4 text-[#1e2943]">Denial Log</h2>
+          <p className="text-sm text-slate-500 mb-6">{data.denials.length} total denial events recorded</p>
+          <div className="flex-1 overflow-hidden">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b-2 border-red-400">
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">Time</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">User</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">Host</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">Feature</th>
+                  <th className="px-4 py-3 text-[10px] font-bold uppercase text-slate-500">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.denials.slice(0, 35).map((d, i) => (
+                  <tr key={i}>
+                    <td className="px-4 py-2 text-xs font-mono text-slate-400">{d.time}</td>
+                    <td className="px-4 py-2 text-xs font-semibold">{d.user}</td>
+                    <td className="px-4 py-2 text-xs text-slate-500">{d.host}</td>
+                    <td className="px-4 py-2 text-xs font-semibold text-[#1871bd]">{d.feature}</td>
+                    <td className="px-4 py-2 text-xs text-red-500">{d.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data.denials.length > 35 && (
+              <p className="mt-4 text-xs text-slate-400 italic">Showing 35 of {data.denials.length} denial events.</p>
+            )}
+          </div>
+          <ReportPageFooter serverName={data.metadata.serverName} pageNum={4} />
+        </div>
+      )}
     </div>
   );
 };
@@ -475,18 +579,20 @@ export function App() {
     await new Promise(r => setTimeout(r, 500));
 
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const pages = ['report-page-1', 'report-page-2'];
+    const pages = ['report-page-1', 'report-page-2', 'report-page-3', 'report-page-4'];
     
-    for (let i = 0; i < pages.length; i++) {
-      const el = document.getElementById(pages[i]);
+    let firstPage = true;
+    for (const pageId of pages) {
+      const el = document.getElementById(pageId);
       if (el) {
         const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
         const imgData = canvas.toDataURL('image/png');
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         
-        if (i > 0) pdf.addPage();
+        if (!firstPage) pdf.addPage();
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        firstPage = false;
       }
     }
     
@@ -538,10 +644,8 @@ export function App() {
     return (
       <div className={`min-h-screen flex items-center justify-center p-6 ${isDarkMode ? 'dark bg-[#0f172a] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300`}>
         <div className="max-w-4xl mx-auto flex flex-col items-center text-center">
-          <div className="p-5 bg-gradient-to-br from-[#1871bd] to-[#46b6e3] rounded-3xl mb-8 shadow-2xl shadow-blue-500/40">
-            <Database size={56} className="text-white" />
-          </div>
-          <h1 className="text-6xl font-black mb-4 tracking-tighter">
+          <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-12 mb-6" />
+          <h1 className="text-5xl font-extrabold mb-4 tracking-tight">
             SNL <span className="text-[#1871bd]">License Parser</span>
           </h1>
           <p className="text-xl text-slate-500 dark:text-slate-400 mb-12 max-w-2xl font-medium">
@@ -549,7 +653,7 @@ export function App() {
           </p>
           <label className="group relative cursor-pointer w-full max-w-lg">
             <div className={`
-              border-2 border-dashed rounded-[2rem] p-16 text-center transition-all duration-300
+              border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300
               ${isDarkMode ? 'border-slate-700 bg-slate-800/50 hover:bg-slate-800 hover:border-[#1871bd]' : 'border-slate-300 bg-white hover:border-[#1871bd] shadow-lg'}
             `}>
               <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
@@ -570,10 +674,7 @@ export function App() {
       {/* Sidebar */}
       <aside className="w-72 border-r border-slate-200 dark:border-slate-800 p-8 flex flex-col hidden lg:flex sticky top-0 h-screen bg-white dark:bg-[#0f172a] z-20">
         <div className="flex items-center gap-3 mb-12 px-2">
-          <div className="p-2.5 bg-[#1871bd] rounded-2xl shadow-lg shadow-blue-500/20">
-            <Database size={24} className="text-white" />
-          </div>
-          <h2 className="font-black text-2xl tracking-tighter">SNL Parser</h2>
+          <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-8" />
         </div>
 
         <nav className="space-y-2 flex-1">
@@ -590,7 +691,7 @@ export function App() {
               onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-200 ${
                 activeTab === item.id 
-                  ? 'bg-[#1871bd] text-white shadow-xl shadow-blue-500/30 font-bold scale-[1.02]' 
+                  ? 'bg-[#1871bd] text-white shadow-sm font-bold scale-[1.02]' 
                   : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50 font-medium'
               }`}
             >
@@ -613,7 +714,7 @@ export function App() {
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             <span className="font-bold text-sm">{isDarkMode ? 'Switch to Light' : 'Switch to Dark'}</span>
           </button>
-          <div className="p-5 rounded-3xl bg-slate-100 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50">
+          <div className="p-5 rounded-xl bg-slate-100 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50">
             <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-400 uppercase tracking-widest">
               <Server size={12} /> {data.metadata.serverName}
             </div>
@@ -648,7 +749,7 @@ export function App() {
             </button>
             <button 
               onClick={downloadCurrentPagePDF}
-              className="px-6 py-3 rounded-2xl bg-[#1871bd] hover:bg-blue-700 text-white text-sm font-bold shadow-xl shadow-blue-500/20 flex items-center gap-3 transition-all"
+              className="px-6 py-3 rounded-2xl bg-[#1871bd] hover:bg-blue-700 text-white text-sm font-bold shadow-sm flex items-center gap-3 transition-all"
             >
               <Printer size={18} /> Print View
             </button>
@@ -666,7 +767,7 @@ export function App() {
               </div>
               <ExecutiveSummaryContent data={data} />
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-xl relative overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
                   <h3 className="text-xl font-black mb-8 flex items-center gap-3">
                     <Activity size={24} className="text-[#1871bd]" /> Checkout Trend
                   </h3>
@@ -687,7 +788,7 @@ export function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-xl">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                   <h3 className="text-xl font-black mb-8 flex items-center gap-3">
                     <LayoutDashboard size={24} className="text-[#46b6e3]" /> Demand by Feature
                   </h3>
@@ -707,7 +808,7 @@ export function App() {
           )}
 
           {activeTab === 'licenses' && (
-            <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 overflow-hidden shadow-2xl">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
               <div className="p-8 border-b border-slate-200 dark:border-slate-700">
                 <h3 className="text-2xl font-black">License Inventory Health</h3>
               </div>
@@ -744,7 +845,7 @@ export function App() {
           )}
 
           {activeTab === 'users' && (
-             <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 overflow-hidden shadow-2xl">
+             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
               <div className="p-8 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
                 <h3 className="text-2xl font-black">User Consumption Analysis</h3>
               </div>
@@ -777,7 +878,7 @@ export function App() {
           )}
 
           {activeTab === 'denials' && (
-            <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 overflow-hidden shadow-2xl">
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
               <div className="p-8 border-b border-slate-200 dark:border-slate-700">
                 <h3 className="text-2xl font-black">Denial Audit Trail</h3>
               </div>
@@ -805,7 +906,7 @@ export function App() {
           )}
 
           {activeTab === 'errors' && (
-             <div className="bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 overflow-hidden shadow-2xl">
+             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
                 <div className="p-8 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80">
                   <h3 className="text-xl font-black">System Event Trace</h3>
                 </div>
@@ -824,8 +925,8 @@ export function App() {
           {activeTab === 'reports' && (
             <div className="space-y-12">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-2xl group transition-all">
-                  <div className="p-6 bg-blue-100 dark:bg-blue-900/30 rounded-3xl w-fit mb-8 group-hover:rotate-3 transition-transform">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md group transition-all">
+                  <div className="p-6 bg-blue-100 dark:bg-blue-900/30 rounded-xl w-fit mb-8 group-hover:rotate-3 transition-transform">
                     <Layers size={48} className="text-[#1871bd]" />
                   </div>
                   <h3 className="text-2xl font-black mb-4">Master Executive Audit</h3>
@@ -835,7 +936,7 @@ export function App() {
                   <button 
                     onClick={downloadMasterPDF}
                     disabled={isGeneratingPDF}
-                    className="w-full py-5 bg-[#1871bd] hover:bg-blue-700 disabled:bg-slate-400 text-white font-black rounded-3xl shadow-xl shadow-blue-500/30 transition-all flex items-center justify-center gap-4 text-lg"
+                    className="w-full py-5 bg-[#1871bd] hover:bg-blue-700 disabled:bg-slate-400 text-white font-black rounded-xl shadow-sm transition-all flex items-center justify-center gap-4 text-lg"
                   >
                     {isGeneratingPDF ? (
                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -846,8 +947,8 @@ export function App() {
                     )}
                   </button>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-700 shadow-2xl">
-                  <div className="p-6 bg-purple-100 dark:bg-purple-900/30 rounded-3xl w-fit mb-8">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md">
+                  <div className="p-6 bg-purple-100 dark:bg-purple-900/30 rounded-xl w-fit mb-8">
                     <Database size={48} className="text-purple-600" />
                   </div>
                   <h3 className="text-2xl font-black mb-4">Quick PDF Summary</h3>
@@ -856,7 +957,7 @@ export function App() {
                   </p>
                   <button 
                     onClick={downloadCurrentPagePDF}
-                    className="w-full py-5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-[#1e2943] dark:text-white font-black rounded-3xl transition-all flex items-center justify-center gap-4 text-lg border border-slate-200 dark:border-slate-600"
+                    className="w-full py-5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-[#1e2943] dark:text-white font-black rounded-xl transition-all flex items-center justify-center gap-4 text-lg border border-slate-200 dark:border-slate-600"
                   >
                     <Printer size={22} /> Export Current Page
                   </button>
