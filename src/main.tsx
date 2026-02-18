@@ -767,7 +767,7 @@ export function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                 <StatCard title="Total Sessions" value={data.sessions.length.toLocaleString()} icon={Clock} color={COLORS.brandMid} />
                 <StatCard title="Unique Users" value={Object.keys(data.userStats).length} icon={Users} color={COLORS.brandBlue} />
-                <StatCard title="Denied Requests" value={data.denials.length} icon={ShieldAlert} color={COLORS.error} trend={data.denials.length > 50 ? 12 : -5} />
+                <StatCard title="Denied Requests" value={data.denials.length} icon={ShieldAlert} color={COLORS.error} />
                 <StatCard title="Avg Use Duration" value={formatDuration(data.sessions.reduce((acc, s) => acc + (s.duration || 0), 0) / (data.sessions.length || 1))} icon={Activity} color={COLORS.success} />
               </div>
 
