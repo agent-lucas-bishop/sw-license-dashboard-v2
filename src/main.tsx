@@ -72,6 +72,13 @@ interface DashboardData {
   timeSeriesUsage: { time: string, count: number }[];
   denialsByDay: { time: string, count: number }[];
   errors: LogEntry[];
+  // New analytics
+  peakHours: { hour: number, count: number }[];
+  concurrentUsage: { time: string, concurrent: number }[];
+  durationDistribution: { bucket: string, count: number }[];
+  hostStats: Record<string, { sessions: number, totalDuration: number, users: Set<string> }>;
+  featureCoUsage: { pair: string, count: number }[];
+  denialRatioByFeature: { name: string, checkouts: number, denials: number, ratio: number }[];
 }
 
 // --- Utils ---
@@ -234,6 +241,98 @@ const parseLogFile = (content: string): DashboardData => {
     denialsByDay[dateKey] = (denialsByDay[dateKey] || 0) + 1;
   });
 
+  // --- New Analytics ---
+
+  // 1. Peak Hours (which hours of day have most checkouts)
+  const hourCounts: Record<number, number> = {};
+  sessions.forEach(s => {
+    const h = s.start.getHours();
+    hourCounts[h] = (hourCounts[h] || 0) + 1;
+  });
+  const peakHours = Array.from({ length: 24 }, (_, i) => ({ hour: i, count: hourCounts[i] || 0 }));
+
+  // 2. Concurrent License Usage (sample every hour across all days)
+  const concurrentMap: Record<string, number> = {};
+  if (sessions.length > 0) {
+    const validSessions = sessions.filter(s => s.end && !isNaN(s.start.getTime()) && !isNaN(s.end.getTime()));
+    // Build event list
+    const events: { time: number, delta: number }[] = [];
+    validSessions.forEach(s => {
+      events.push({ time: s.start.getTime(), delta: 1 });
+      events.push({ time: s.end!.getTime(), delta: -1 });
+    });
+    events.sort((a, b) => a.time - b.time);
+    
+    // Sample at each date boundary to get max concurrent per day
+    const dailyMax: Record<string, number> = {};
+    let concurrent = 0;
+    events.forEach(e => {
+      concurrent += e.delta;
+      const day = new Date(e.time).toISOString().split('T')[0];
+      dailyMax[day] = Math.max(dailyMax[day] || 0, concurrent);
+    });
+    Object.assign(concurrentMap, dailyMax);
+  }
+  const concurrentUsage = Object.entries(concurrentMap)
+    .map(([time, concurrent]) => ({ time, concurrent }))
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  // 3. Session Duration Distribution
+  const durationBuckets: Record<string, number> = {
+    '<15m': 0, '15m-1h': 0, '1-2h': 0, '2-4h': 0, '4-8h': 0, '8h+': 0
+  };
+  sessions.forEach(s => {
+    const d = s.duration || 0;
+    if (d < 15) durationBuckets['<15m']++;
+    else if (d < 60) durationBuckets['15m-1h']++;
+    else if (d < 120) durationBuckets['1-2h']++;
+    else if (d < 240) durationBuckets['2-4h']++;
+    else if (d < 480) durationBuckets['4-8h']++;
+    else durationBuckets['8h+']++;
+  });
+  const durationDistribution = Object.entries(durationBuckets).map(([bucket, count]) => ({ bucket, count }));
+
+  // 4. Host/Machine Stats
+  const hostStats: Record<string, { sessions: number, totalDuration: number, users: Set<string> }> = {};
+  sessions.forEach(s => {
+    if (!hostStats[s.host]) hostStats[s.host] = { sessions: 0, totalDuration: 0, users: new Set() };
+    hostStats[s.host].sessions++;
+    hostStats[s.host].totalDuration += s.duration || 0;
+    hostStats[s.host].users.add(s.user);
+  });
+
+  // 5. Feature Co-usage (features used by same user in overlapping time)
+  const userFeatures: Record<string, Set<string>> = {};
+  sessions.forEach(s => {
+    if (!userFeatures[s.user]) userFeatures[s.user] = new Set();
+    userFeatures[s.user].add(s.feature);
+  });
+  const pairCounts: Record<string, number> = {};
+  Object.values(userFeatures).forEach(features => {
+    const arr = Array.from(features).sort();
+    for (let i = 0; i < arr.length; i++) {
+      for (let j = i + 1; j < arr.length; j++) {
+        const pair = `${arr[i]} + ${arr[j]}`;
+        pairCounts[pair] = (pairCounts[pair] || 0) + 1;
+      }
+    }
+  });
+  const featureCoUsage = Object.entries(pairCounts)
+    .map(([pair, count]) => ({ pair, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // 6. Denial-to-Checkout Ratio by Feature
+  const denialRatioByFeature = Object.entries(featureStats)
+    .filter(([_, s]) => s.checkouts > 0 || s.denials > 0)
+    .map(([name, s]) => ({
+      name,
+      checkouts: s.checkouts,
+      denials: s.denials,
+      ratio: (s.checkouts + s.denials) > 0 ? Math.round((s.denials / (s.checkouts + s.denials)) * 100) : 0
+    }))
+    .sort((a, b) => b.ratio - a.ratio);
+
   return {
     metadata: { serverName, flexVersion, port, vendorPort, pid, logPath, startDate: currentDate },
     entries,
@@ -244,7 +343,13 @@ const parseLogFile = (content: string): DashboardData => {
     featureStats,
     timeSeriesUsage: Object.entries(timeSeries).map(([time, count]) => ({ time, count })).sort((a,b) => a.time.localeCompare(b.time)),
     denialsByDay: Object.entries(denialsByDay).map(([time, count]) => ({ time, count })).sort((a,b) => a.time.localeCompare(b.time)),
-    errors: entries.filter(e => e.type === 'ERROR' || e.type === 'UNSUPPORTED')
+    errors: entries.filter(e => e.type === 'ERROR' || e.type === 'UNSUPPORTED'),
+    peakHours,
+    concurrentUsage,
+    durationDistribution,
+    hostStats,
+    featureCoUsage,
+    denialRatioByFeature
   };
 };
 
@@ -929,6 +1034,64 @@ export function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Concurrent Usage + Peak Hours */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-slate-800">
+                <div className="bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold mb-1 text-slate-300">Peak Concurrent Licenses</h3>
+                  <p className="text-[11px] text-slate-500 mb-4">Maximum simultaneous checkouts per day</p>
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={data.concurrentUsage}>
+                        <defs>
+                          <linearGradient id="colorConcurrent" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                        <XAxis dataKey="time" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e2943', border: '1px solid #334155', borderRadius: '4px', fontSize: '12px' }} />
+                        <Area type="stepAfter" dataKey="concurrent" stroke="#f59e0b" fillOpacity={1} fill="url(#colorConcurrent)" strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold mb-1 text-slate-300">Checkout Activity by Hour</h3>
+                  <p className="text-[11px] text-slate-500 mb-4">When are licenses being checked out?</p>
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data.peakHours}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                        <XAxis dataKey="hour" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(h: number) => `${h}:00`} />
+                        <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e2943', border: '1px solid #334155', borderRadius: '4px', fontSize: '12px' }} labelFormatter={(h: number) => `${h}:00`} />
+                        <Bar dataKey="count" fill="#46b6e3" radius={[2, 2, 0, 0]} barSize={16} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              {/* Session Duration Distribution */}
+              <div className="bg-[#111827] p-6 border border-slate-800">
+                <h3 className="text-sm font-semibold mb-1 text-slate-300">Session Duration Distribution</h3>
+                <p className="text-[11px] text-slate-500 mb-4">How long are licenses typically held?</p>
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.durationDistribution}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                      <XAxis dataKey="bucket" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#1e2943', border: '1px solid #334155', borderRadius: '4px', fontSize: '12px' }} />
+                      <Bar dataKey="count" fill="#10b981" radius={[2, 2, 0, 0]} barSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             </>
           )}
 
@@ -969,6 +1132,44 @@ export function App() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Denial Ratio + Feature Co-usage */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-slate-800">
+                <div className="bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold mb-1 text-slate-300">Denial-to-Checkout Ratio</h3>
+                  <p className="text-[11px] text-slate-500 mb-4">Which features are most constrained?</p>
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart layout="vertical" data={data.denialRatioByFeature.filter(f => f.ratio > 0).slice(0, 10)}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#1e293b" />
+                        <XAxis type="number" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
+                        <YAxis dataKey="name" type="category" stroke="#475569" fontSize={9} width={100} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e2943', border: '1px solid #334155', borderRadius: '4px', fontSize: '12px' }} formatter={(v: number) => [`${v}%`, 'Denial Rate']} />
+                        <Bar dataKey="ratio" fill="#ef4444" radius={[0, 3, 3, 0]} barSize={16} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold mb-1 text-slate-300">Feature Co-usage</h3>
+                  <p className="text-[11px] text-slate-500 mb-4">Features commonly used by the same users</p>
+                  <div className="space-y-2">
+                    {data.featureCoUsage.slice(0, 8).map((item, i) => (
+                      <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-800/50">
+                        <span className="text-xs text-slate-300 font-medium truncate mr-4">{item.pair}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="w-20 h-1.5 bg-slate-800 overflow-hidden">
+                            <div className="h-full bg-[#46b6e3]" style={{ width: `${Math.min(100, (item.count / (data.featureCoUsage[0]?.count || 1)) * 100)}%` }} />
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono-brand w-8 text-right">{item.count}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {data.featureCoUsage.length === 0 && <p className="text-xs text-slate-500">No co-usage patterns detected</p>}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1050,6 +1251,93 @@ export function App() {
                       ))}
                     </div>
                  </div>
+              </div>
+
+              {/* Host/Machine Analysis */}
+              <div className="bg-[#111827] border border-slate-800 overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-800 bg-[#0c1220]">
+                  <h3 className="text-sm font-semibold text-slate-300">Host / Machine Analysis</h3>
+                  <p className="text-[11px] text-slate-500">License consumption by workstation</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-[#0c1220]">
+                      <tr>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Host</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Sessions</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Total Duration</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Unique Users</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {Object.entries(data.hostStats)
+                        .sort((a, b) => b[1].sessions - a[1].sessions)
+                        .slice(0, 20)
+                        .map(([host, stats]) => (
+                        <tr key={host} className="hover:bg-[#1a2332]">
+                          <td className="px-5 py-3 text-sm font-semibold font-mono-brand text-xs">{host}</td>
+                          <td className="px-5 py-3 text-sm">{stats.sessions}</td>
+                          <td className="px-5 py-3 text-sm">{formatDuration(stats.totalDuration)}</td>
+                          <td className="px-5 py-3 text-sm">{stats.users.size}</td>
+                          <td className="px-5 py-3">
+                            <span className={`text-[10px] font-semibold uppercase tracking-wider ${stats.users.size > 1 ? 'text-amber-400' : 'text-slate-500'}`}>
+                              {stats.users.size > 1 ? 'Shared' : 'Individual'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* User Activity Timeline (simplified - top 15 users, session blocks) */}
+              <div className="bg-[#111827] border border-slate-800 p-6">
+                <h3 className="text-sm font-semibold mb-1 text-slate-300">User Activity Timeline</h3>
+                <p className="text-[11px] text-slate-500 mb-4">Session patterns for top users (most recent 7 days)</p>
+                <div className="space-y-1.5 overflow-x-auto">
+                  {(() => {
+                    const topUserNames = Object.entries(data.userStats)
+                      .sort((a, b) => b[1].sessions - a[1].sessions)
+                      .slice(0, 15)
+                      .map(([name]) => name);
+                    
+                    // Find time range
+                    const allTimes = data.sessions.filter(s => s.end).map(s => [s.start.getTime(), s.end!.getTime()]).flat();
+                    if (allTimes.length === 0) return <p className="text-xs text-slate-500">No session data available</p>;
+                    const maxTime = Math.max(...allTimes);
+                    const minTime = maxTime - 7 * 24 * 60 * 60 * 1000; // last 7 days
+                    const range = maxTime - minTime;
+
+                    return topUserNames.map(userName => {
+                      const userSessions = data.sessions.filter(s => s.user === userName && s.end && s.start.getTime() >= minTime);
+                      return (
+                        <div key={userName} className="flex items-center gap-3">
+                          <span className="text-[11px] text-slate-500 w-24 truncate shrink-0 font-mono-brand">{userName}</span>
+                          <div className="flex-1 h-4 bg-[#0c1220] relative min-w-[400px]">
+                            {userSessions.map((s, i) => {
+                              const left = ((s.start.getTime() - minTime) / range) * 100;
+                              const width = Math.max(0.3, ((s.end!.getTime() - s.start.getTime()) / range) * 100);
+                              return (
+                                <div
+                                  key={i}
+                                  className="absolute top-0.5 h-3 bg-[#1871bd] opacity-70 hover:opacity-100 transition-opacity"
+                                  style={{ left: `${Math.max(0, left)}%`, width: `${Math.min(width, 100 - left)}%` }}
+                                  title={`${s.feature} · ${formatDuration(s.duration || 0)}`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+                <div className="flex justify-between mt-2 text-[10px] text-slate-600">
+                  <span>7 days ago</span>
+                  <span>Most recent</span>
+                </div>
               </div>
             </div>
           )}
