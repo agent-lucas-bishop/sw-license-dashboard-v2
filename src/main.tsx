@@ -293,7 +293,9 @@ const ExecutiveSummary = ({ data }: { data: DashboardData }) => {
             <div className="mt-6 flex flex-wrap gap-4">
               <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/20">
                 <p className="text-[10px] uppercase text-slate-300 font-bold">Health Status</p>
-                <p className="text-xl font-bold text-green-400">Stable</p>
+                <p className={`text-xl font-bold ${Number(denialRate) > 10 || data.errors.filter(e => e.type === 'ERROR').length > 5 ? 'text-red-400' : Number(denialRate) > 5 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {Number(denialRate) > 10 || data.errors.filter(e => e.type === 'ERROR').length > 5 ? 'At Risk' : Number(denialRate) > 5 ? 'Warning' : 'Healthy'}
+                </p>
               </div>
               <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/20">
                 <p className="text-[10px] uppercase text-slate-300 font-bold">Denial Threshold</p>
@@ -1114,7 +1116,15 @@ export function App() {
                   <div>
                     <h4 className="text-2xl font-black text-white mb-2 tracking-tight">Optimization Recommendation</h4>
                     <p className="text-blue-100/70 max-w-2xl leading-relaxed font-medium">
-                      Based on current checkout trends, your environment could benefit from implementing <strong>Timeout Rules</strong> for specific high-demand features. This would free up idle licenses and reduce the denial rate by an estimated 15%.
+                      {(() => {
+                        const dr = data ? ((data.denials.length / ((data.sessions.length + data.denials.length) || 1)) * 100) : 0;
+                        const longSessions = data ? data.sessions.filter(s => (s.duration || 0) > 480).length : 0;
+                        const longPct = data ? Math.round((longSessions / (data.sessions.length || 1)) * 100) : 0;
+                        if (dr > 10) return <>Your denial rate is <strong>{dr.toFixed(1)}%</strong> — consider adding seats for your most-denied features to reduce engineer downtime.</>;
+                        if (dr > 5) return <>Denial rate of <strong>{dr.toFixed(1)}%</strong> detected. Review seat counts for frequently denied features and consider implementing timeout policies for idle sessions.</>;
+                        if (longPct > 20) return <><strong>{longPct}%</strong> of sessions exceed 8 hours. Consider implementing idle timeout rules to free licenses for other users.</>;
+                        return <>License utilization appears healthy. Continue monitoring for seasonal trends and review seat counts at renewal time.</>;
+                      })()}
                     </p>
                   </div>
                 </div>
