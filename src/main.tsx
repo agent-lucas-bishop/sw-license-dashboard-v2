@@ -372,7 +372,7 @@ const MasterReport = ({ data }: { data: DashboardData }) => {
   const pageStyle: React.CSSProperties = { width: '210mm', minHeight: '297mm', padding: '20mm', fontFamily: 'Inter, sans-serif', backgroundColor: '#ffffff', color: '#1e293b', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' };
 
   return (
-    <div style={{ position: 'fixed', left: '-3000px', top: 0 }}>
+    <div style={{ position: 'absolute', left: '-9999px', top: 0, opacity: 0, pointerEvents: 'none' }}>
       {/* Page 1: Cover + Executive Summary */}
       <div id="report-page-1" style={pageStyle}>
         <ReportPageHeader pageTitle="Executive Summary" />
@@ -560,25 +560,34 @@ export function App() {
     reader.readAsText(file);
   };
 
+  const [pdfGenerating, setPdfGenerating] = useState(false);
   const downloadMasterPDF = async () => {
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pages = ['report-page-1', 'report-page-2', 'report-page-3', 'report-page-4'];
-    
-    let firstPage = true;
-    for (const pageId of pages) {
-      const el = document.getElementById(pageId);
-      if (el) {
-        const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-        const imgData = canvas.toDataURL('image/png');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        if (!firstPage) pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        firstPage = false;
+    setPdfGenerating(true);
+    try {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pages = ['report-page-1', 'report-page-2', 'report-page-3', 'report-page-4'];
+      
+      let firstPage = true;
+      for (const pageId of pages) {
+        const el = document.getElementById(pageId);
+        if (el) {
+          const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          const imgData = canvas.toDataURL('image/png');
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+          
+          if (!firstPage) pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+          firstPage = false;
+        }
       }
+      pdf.save(`SNL-Executive-Report-${data?.metadata.serverName || 'Export'}.pdf`);
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      alert('PDF generation failed. Try on desktop for best results.');
+    } finally {
+      setPdfGenerating(false);
     }
-    pdf.save(`SNL-Executive-Report-${data?.metadata.serverName || 'Export'}.pdf`);
   };
 
   const topFeaturesBySessions = useMemo(() => {
