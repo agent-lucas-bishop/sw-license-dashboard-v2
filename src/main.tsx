@@ -9,7 +9,7 @@ import {
 import { 
   FileText, Upload, Users, ShieldAlert, Clock, Activity, Download, 
   Moon, Sun, LayoutDashboard, Database, AlertTriangle, CheckCircle, Search, Filter,
-  ChevronRight, Printer, FileDown, Info, Server, Cpu
+  ChevronRight, Printer, FileDown, Info, Server, Cpu, Menu, X
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -543,6 +543,7 @@ export function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [isParsing, setIsParsing] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -610,7 +611,7 @@ export function App() {
       <div className={`min-h-screen flex items-center justify-center p-6 ${isDarkMode ? 'dark bg-[#0f172a] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300`}>
         <div className="max-w-4xl mx-auto flex flex-col items-center text-center">
           <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-16 mb-8" />
-          <h1 className="text-6xl font-black mb-4 tracking-tighter">
+          <h1 className="text-4xl md:text-6xl font-black mb-4 tracking-tighter">
             SNL <span className="text-[#1871bd]">License Parser</span>
           </h1>
           <p className="text-xl text-slate-500 dark:text-slate-400 mb-12 max-w-2xl font-medium">
@@ -661,6 +662,50 @@ export function App() {
 
   return (
     <div className={`min-h-screen ${isDarkMode ? 'dark bg-[#0f172a] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300 flex overflow-hidden`}>
+      {/* Mobile Header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <img src="/ellison-logo.png" alt="Ellison" className="h-6" />
+          <span className="font-bold text-sm">SNL Parser</span>
+        </div>
+        <button onClick={() => setMobileNavOpen(!mobileNavOpen)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+          {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </div>
+
+      {/* Mobile Nav Overlay */}
+      {mobileNavOpen && (
+        <div className="lg:hidden fixed inset-0 z-20 bg-black/50" onClick={() => setMobileNavOpen(false)}>
+          <div className="absolute top-14 left-0 right-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 p-4 space-y-1" onClick={e => e.stopPropagation()}>
+            {[
+              { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
+              { id: 'licenses', icon: Activity, label: 'License Inventory' },
+              { id: 'users', icon: Users, label: 'User Insights' },
+              { id: 'denials', icon: ShieldAlert, label: 'Denial Logs' },
+              { id: 'errors', icon: AlertTriangle, label: 'System Errors' },
+              { id: 'reports', icon: FileDown, label: 'Exports' }
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setMobileNavOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all ${
+                  activeTab === item.id 
+                    ? 'bg-[#1871bd] text-white font-bold' 
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </button>
+            ))}
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-2 mt-2 flex gap-2">
+              <button onClick={() => setData(null)} className="flex-1 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold">Change Log</button>
+              <button onClick={() => { downloadMasterPDF(); setMobileNavOpen(false); }} className="flex-1 px-3 py-2 rounded-lg bg-[#1871bd] text-white text-xs font-bold">Export PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className="w-72 border-r border-slate-200 dark:border-slate-800 p-8 flex flex-col hidden lg:flex sticky top-0 h-screen bg-white dark:bg-[#0f172a] z-20">
         <div className="flex items-center gap-3 mb-12 px-2">
@@ -730,7 +775,7 @@ export function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-10 max-w-7xl mx-auto w-full overflow-y-auto">
+      <main className="flex-1 p-4 pt-16 lg:p-10 lg:pt-10 max-w-7xl mx-auto w-full overflow-y-auto">
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div>
