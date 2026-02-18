@@ -250,22 +250,13 @@ const parseLogFile = (content: string): DashboardData => {
 
 // --- Components ---
 
-const StatCard = ({ title, value, icon: Icon, trend, color }: any) => (
-  <div className="bg-white dark:bg-slate-800 p-6 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm transition-all hover:shadow-md">
-    <div className="flex justify-between items-start mb-4">
-      <div className={`p-3 rounded-xl bg-opacity-10 dark:bg-opacity-20`} style={{ backgroundColor: color + '20' }}>
-        <Icon size={24} style={{ color }} />
-      </div>
-      {trend && (
-        <span className={`text-xs font-medium px-2 py-1 rounded-full ${trend > 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-          {trend > 0 ? '+' : ''}{trend}%
-        </span>
-      )}
+const StatCard = ({ title, value, icon: Icon, color }: any) => (
+  <div className="relative bg-[#111827] border-l-2 pl-5 pr-4 py-4" style={{ borderColor: color }}>
+    <div className="flex items-center gap-2 mb-1">
+      <Icon size={14} style={{ color }} className="opacity-60" />
+      <span className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">{title}</span>
     </div>
-    <div>
-      <h3 className="text-sm font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">{title}</h3>
-      <p className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-    </div>
+    <p className="text-2xl font-bold text-white font-mono-brand tabular-nums">{value}</p>
   </div>
 );
 
@@ -277,64 +268,61 @@ const ExecutiveSummary = ({ data }: { data: DashboardData }) => {
   const totalCheckoutsAttempted = totalSessions + totalDenials;
   const denialRate = totalCheckoutsAttempted > 0 ? ((totalDenials / totalCheckoutsAttempted) * 100).toFixed(1) : '0';
 
+  const healthStatus = Number(denialRate) > 10 || data.errors.filter(e => e.type === 'ERROR').length > 5 ? 'AT RISK' : Number(denialRate) > 5 ? 'WARNING' : 'HEALTHY';
+  const healthColor = healthStatus === 'AT RISK' ? 'text-red-400 border-red-400/30 bg-red-400/5' : healthStatus === 'WARNING' ? 'text-yellow-400 border-yellow-400/30 bg-yellow-400/5' : 'text-emerald-400 border-emerald-400/30 bg-emerald-400/5';
+
   return (
-    <div className="space-y-6">
-      <div className="bg-gradient-to-br from-[#1e2943] to-[#1871bd] p-8 rounded-xl text-white shadow-sm">
-        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          <Info size={24} /> Executive Summary
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <p className="text-slate-200 text-lg leading-relaxed">
-              Log analysis for <span className="font-semibold text-white">{data.metadata.serverName}</span> complete. 
-              We've identified <span className="font-semibold text-white">{totalSessions.toLocaleString()}</span> successful sessions. 
-              The feature <span className="font-semibold text-white">"{topApp?.[0] || 'N/A'}"</span> dominates usage.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-4">
-              <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/20">
-                <p className="text-[10px] uppercase text-slate-300 font-bold">Health Status</p>
-                <p className={`text-xl font-bold ${Number(denialRate) > 10 || data.errors.filter(e => e.type === 'ERROR').length > 5 ? 'text-red-400' : Number(denialRate) > 5 ? 'text-yellow-400' : 'text-green-400'}`}>
-                  {Number(denialRate) > 10 || data.errors.filter(e => e.type === 'ERROR').length > 5 ? 'At Risk' : Number(denialRate) > 5 ? 'Warning' : 'Healthy'}
-                </p>
+    <div className="border border-slate-800 bg-[#111827]">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-[#0c1220]">
+        <span className="text-[11px] text-slate-500 uppercase tracking-widest font-medium">Executive Summary</span>
+        <div className={`px-3 py-1 border text-[10px] font-bold uppercase tracking-widest ${healthColor}`}>
+          {healthStatus}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-800">
+        {/* Left: narrative */}
+        <div className="lg:col-span-2 p-6">
+          <p className="text-sm text-slate-400 leading-relaxed">
+            Analyzed <span className="text-white font-semibold">{data.metadata.serverName}</span> — 
+            <span className="text-white font-semibold"> {totalSessions.toLocaleString()}</span> sessions across 
+            <span className="text-white font-semibold"> {Object.keys(data.featureStats).length}</span> features and 
+            <span className="text-white font-semibold"> {Object.keys(data.userStats).length}</span> users. 
+            {topApp && <> Top feature: <span className="text-[#46b6e3] font-medium">{topApp[0]}</span>.</>}
+            {totalDenials > 0 && <> Denial rate: <span className={`font-semibold ${Number(denialRate) > 5 ? 'text-red-400' : 'text-emerald-400'}`}>{denialRate}%</span> ({totalDenials} events).</>}
+          </p>
+
+          {/* Alerts */}
+          <div className="mt-4 space-y-2">
+            {totalDenials > 20 && (
+              <div className="flex items-start gap-2 text-xs text-slate-400">
+                <span className="text-red-400 font-bold mt-px">!</span>
+                <span><strong className="text-red-400">License Scarcity</strong> — Frequent denials for "{topDenied?.[0]}". Consider additional seats.</span>
               </div>
-              <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/20">
-                <p className="text-[10px] uppercase text-slate-300 font-bold">Denial Threshold</p>
-                <p className={`text-xl font-bold ${Number(denialRate) > 5 ? 'text-red-400' : 'text-green-400'}`}>{denialRate}%</p>
+            )}
+            {data.errors.length > 5 && (
+              <div className="flex items-start gap-2 text-xs text-slate-400">
+                <span className="text-amber-400 font-bold mt-px">!</span>
+                <span><strong className="text-amber-400">System Events</strong> — {data.errors.length} errors/warnings detected. Review server health.</span>
               </div>
-              <div className="bg-white/10 px-4 py-2 rounded-xl border border-white/20">
-                <p className="text-[10px] uppercase text-slate-300 font-bold">Active Assets</p>
-                <p className="text-xl font-bold">{Object.keys(data.featureStats).length}</p>
-              </div>
-            </div>
+            )}
           </div>
-          <div className="bg-white/5 p-6 rounded-lg backdrop-blur-md border border-white/10">
-            <h4 className="font-semibold mb-3 flex items-center gap-2 text-blue-300 uppercase tracking-widest text-xs">
-              <ShieldAlert size={14} /> Key Insights & Alerts
-            </h4>
-            <ul className="space-y-3 text-sm text-slate-200">
-              {totalDenials > 20 && (
-                <li className="flex gap-2 items-start">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0" />
-                  <span><strong>License Scarcity:</strong> Frequent denials for "{topDenied?.[0]}". Recommendation: Purchase additional seats to reduce engineer downtime.</span>
-                </li>
-              )}
-              {totalSessions < 10 && (
-                <li className="flex gap-2 items-start">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
-                  <span><strong>Inventory Bloat:</strong> Low license utilization detected. Review maintenance contracts for potential cost savings.</span>
-                </li>
-              )}
-              {data.errors.length > 5 && (
-                <li className="flex gap-2 items-start">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                  <span><strong>System Instability:</strong> Multiple daemon crashes or re-reads detected. Check server resources.</span>
-                </li>
-              )}
-              <li className="flex gap-2 items-start">
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 shrink-0" />
-                <span><strong>FlexLM Ready:</strong> Operating on Port {data.metadata.port} (v{data.metadata.flexVersion}).</span>
-              </li>
-            </ul>
+        </div>
+
+        {/* Right: quick stats */}
+        <div className="p-6 space-y-4">
+          <div className="flex justify-between items-baseline">
+            <span className="text-[11px] text-slate-500 uppercase tracking-wider">Denial Rate</span>
+            <span className={`text-lg font-bold font-mono-brand ${Number(denialRate) > 5 ? 'text-red-400' : 'text-emerald-400'}`}>{denialRate}%</span>
+          </div>
+          <div className="flex justify-between items-baseline">
+            <span className="text-[11px] text-slate-500 uppercase tracking-wider">Active Features</span>
+            <span className="text-lg font-bold font-mono-brand text-white">{Object.keys(data.featureStats).length}</span>
+          </div>
+          <div className="flex justify-between items-baseline">
+            <span className="text-[11px] text-slate-500 uppercase tracking-wider">FlexLM</span>
+            <span className="text-sm font-mono-brand text-slate-400">v{data.metadata.flexVersion} · Port {data.metadata.port}</span>
           </div>
         </div>
       </div>
@@ -668,50 +656,66 @@ export function App() {
 
   if (!data) {
     return (
-      <div className={`min-h-screen flex items-center justify-center p-6 ${isDarkMode ? 'dark bg-[#0f172a] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300`}>
-        <div className="max-w-4xl mx-auto flex flex-col items-center text-center">
-          <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-16 mb-8" />
-          <h1 className="text-4xl md:text-6xl font-black mb-4 tracking-tighter">
-            SNL <span className="text-[#1871bd]">License Parser</span>
-          </h1>
-          <p className="text-xl text-slate-500 dark:text-slate-400 mb-12 max-w-2xl font-medium">
-            Professional dashboard for SolidWorks CAD Administrators. Visualize licensing health, track denials, and optimize your software spend instantly.
-          </p>
-          
-          <label className="group relative cursor-pointer w-full max-w-lg">
-            <div className={`
-              border-2 border-dashed rounded-xl p-16 text-center transition-all duration-300
-              ${isDarkMode ? 'border-slate-700 bg-slate-800/50 hover:bg-slate-800 hover:border-[#1871bd]' : 'border-slate-300 bg-white hover:border-[#1871bd] shadow-lg'}
-            `}>
-              <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
-                <Upload size={32} className="text-[#1871bd]" />
-              </div>
-              <span className="text-2xl font-bold block mb-2">Select License Log</span>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Drag & drop your <strong>lmgrd.log</strong> here</p>
-              <input type="file" className="hidden" onChange={handleFileUpload} accept=".log,.txt" />
-            </div>
-            {isParsing && (
-              <div className="absolute inset-0 bg-slate-900/80 rounded-xl flex items-center justify-center flex-col gap-4">
-                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                <p className="font-bold">Parsing Data Points...</p>
-              </div>
-            )}
-          </label>
-          
-          <p className="mt-6 text-xs text-slate-500 dark:text-slate-500 tracking-wide">🔒 100% client-side · your data never leaves the browser</p>
+      <div className={`min-h-screen ${isDarkMode ? 'dark bg-[#0c1220] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300`}>
+        <div className="max-w-5xl mx-auto px-6 py-16 md:py-24">
+          {/* Top bar */}
+          <div className="flex items-center justify-between mb-16">
+            <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-10" />
+            <span className="text-[10px] text-slate-600 uppercase tracking-[0.2em] font-medium">License Analytics Tool</span>
+          </div>
 
-          <div className="mt-14 grid grid-cols-1 md:grid-cols-3 gap-8 text-left w-full">
-            {[
-              { icon: ShieldAlert, title: 'Denial Analysis', desc: 'Identify which engineers are being blocked and why.' },
-              { icon: Clock, title: 'Consumption Stats', desc: 'Detailed breakdown of session length and top applications.' },
-              { icon: FileDown, title: 'PDF Reporting', desc: 'Generate executive summaries ready for management review.' }
-            ].map((f, i) => (
-              <div key={i} className="p-8 rounded-xl bg-white/5 border border-white/5 dark:border-slate-800 dark:bg-slate-800/40 shadow-sm backdrop-blur-sm">
-                <div className="p-3 bg-blue-500/10 rounded-lg w-fit mb-4">
-                  <f.icon className="text-[#1871bd]" size={24} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-start">
+            {/* Left: Copy */}
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight leading-[1.1]">
+                SNL License<br/><span className="text-[#1871bd]">Parser</span>
+              </h1>
+              <p className="text-base text-slate-400 mb-8 leading-relaxed max-w-md">
+                Drop a FlexLM log file and get instant visibility into license usage, denials, and user patterns. Built for SolidWorks CAD administrators.
+              </p>
+              
+              <div className="flex items-center gap-6 text-[11px] text-slate-600 uppercase tracking-wider">
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /> Client-side only</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-[#1871bd] rounded-full" /> No data uploaded</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-[#46b6e3] rounded-full" /> PDF export</span>
+              </div>
+            </div>
+
+            {/* Right: Upload */}
+            <div>
+              <label className="group relative cursor-pointer block">
+                <div className={`
+                  border border-dashed p-12 text-center transition-all duration-200
+                  ${isDarkMode ? 'border-slate-700 bg-[#111827] hover:border-[#1871bd] hover:bg-[#111827]/80' : 'border-slate-300 bg-white hover:border-[#1871bd]'}
+                `}>
+                  <Upload size={28} className="text-[#1871bd] mx-auto mb-4 group-hover:translate-y-[-2px] transition-transform" />
+                  <span className="text-lg font-semibold block mb-1">Select License Log</span>
+                  <p className="text-sm text-slate-500">Drop your <span className="font-mono-brand text-xs text-slate-400">lmgrd.log</span> file here</p>
+                  <input type="file" className="hidden" onChange={handleFileUpload} accept=".log,.txt" />
                 </div>
-                <h3 className="font-bold text-xl mb-2">{f.title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{f.desc}</p>
+                {isParsing && (
+                  <div className="absolute inset-0 bg-[#0c1220]/90 flex items-center justify-center flex-col gap-3">
+                    <div className="w-8 h-8 border-2 border-[#1871bd] border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm font-medium text-slate-300">Parsing...</p>
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
+
+          {/* Feature strip */}
+          <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-px bg-slate-800">
+            {[
+              { icon: ShieldAlert, title: 'Denial Analysis', desc: 'See which engineers are blocked and why.' },
+              { icon: Clock, title: 'Usage Analytics', desc: 'Session durations, peak hours, top features.' },
+              { icon: FileDown, title: 'PDF Reports', desc: 'Multi-page executive reports, one click.' }
+            ].map((f, i) => (
+              <div key={i} className="bg-[#0c1220] p-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <f.icon size={16} className="text-[#1871bd]" />
+                  <h3 className="font-semibold text-sm text-white">{f.title}</h3>
+                </div>
+                <p className="text-slate-500 text-xs leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -721,22 +725,22 @@ export function App() {
   }
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? 'dark bg-[#0f172a] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300 flex overflow-hidden`}>
+    <div className={`min-h-screen ${isDarkMode ? 'dark bg-[#0c1220] text-white' : 'bg-slate-50 text-slate-900'} transition-colors duration-300 flex overflow-hidden`}>
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-white dark:bg-[#0f172a] border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 bg-[#0c1220] border-b border-slate-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <img src="/ellison-logo.png" alt="Ellison" className="h-6" />
-          <span className="font-bold text-sm">SNL Parser</span>
+          <img src="/ellison-logo.png" alt="Ellison" className="h-5" />
+          <span className="text-sm font-medium text-slate-400">SNL Parser</span>
         </div>
-        <button onClick={() => setMobileNavOpen(!mobileNavOpen)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
-          {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+        <button onClick={() => setMobileNavOpen(!mobileNavOpen)} className="p-2 hover:bg-slate-800">
+          {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
       </div>
 
       {/* Mobile Nav Overlay */}
       {mobileNavOpen && (
-        <div className="lg:hidden fixed inset-0 z-20 bg-black/50" onClick={() => setMobileNavOpen(false)}>
-          <div className="absolute top-14 left-0 right-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 p-4 space-y-1" onClick={e => e.stopPropagation()}>
+        <div className="lg:hidden fixed inset-0 z-20 bg-black/60" onClick={() => setMobileNavOpen(false)}>
+          <div className="absolute top-12 left-0 right-0 bg-[#111827] border-b border-slate-800 p-3 space-y-0.5" onClick={e => e.stopPropagation()}>
             {[
               { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
               { id: 'licenses', icon: Activity, label: 'License Inventory' },
@@ -748,56 +752,56 @@ export function App() {
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); setMobileNavOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all ${
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all ${
                   activeTab === item.id 
-                    ? 'bg-[#1871bd] text-white font-bold' 
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    ? 'text-[#1871bd] font-semibold border-l-2 border-[#1871bd] bg-[#1871bd]/5' 
+                    : 'text-slate-500 hover:text-slate-300 border-l-2 border-transparent'
                 }`}
               >
-                <item.icon size={18} />
+                <item.icon size={16} />
                 {item.label}
               </button>
             ))}
-            <div className="border-t border-slate-200 dark:border-slate-700 pt-2 mt-2 flex gap-2">
-              <button onClick={() => setData(null)} className="flex-1 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold">Change Log</button>
-              <button onClick={() => { downloadMasterPDF(); setMobileNavOpen(false); }} className="flex-1 px-3 py-2 rounded-lg bg-[#1871bd] text-white text-xs font-bold">Export PDF</button>
+            <div className="border-t border-slate-800 pt-2 mt-2 flex gap-2">
+              <button onClick={() => setData(null)} className="flex-1 px-3 py-2 bg-slate-800 text-xs font-medium text-slate-400">Change Log</button>
+              <button onClick={() => { downloadMasterPDF(); setMobileNavOpen(false); }} className="flex-1 px-3 py-2 bg-[#1871bd] text-white text-xs font-medium">Export PDF</button>
             </div>
           </div>
         </div>
       )}
 
       {/* Sidebar */}
-      <aside className="w-72 border-r border-slate-200 dark:border-slate-800 p-8 flex flex-col hidden lg:flex sticky top-0 h-screen bg-white dark:bg-[#0f172a] z-20">
-        <div className="flex items-center gap-3 mb-12 px-2">
-          <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-8" />
-          <h2 className="font-black text-xl tracking-tighter">SNL Parser</h2>
+      <aside className="w-56 border-r border-slate-800 py-6 flex flex-col hidden lg:flex sticky top-0 h-screen bg-[#0c1220] z-20">
+        <div className="flex items-center gap-2.5 mb-10 px-5">
+          <img src="/ellison-logo.png" alt="Ellison Technologies" className="h-6" />
+          <span className="text-sm font-medium text-slate-400">SNL Parser</span>
         </div>
 
-        <nav className="space-y-2 flex-1">
+        <nav className="space-y-0.5 flex-1 px-2">
           {[
             { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
-            { id: 'licenses', icon: Activity, label: 'License Inventory' },
-            { id: 'users', icon: Users, label: 'User Insights' },
-            { id: 'denials', icon: ShieldAlert, label: 'Denial Logs' },
-            { id: 'errors', icon: AlertTriangle, label: 'System Errors' },
+            { id: 'licenses', icon: Activity, label: 'Licenses' },
+            { id: 'users', icon: Users, label: 'Users' },
+            { id: 'denials', icon: ShieldAlert, label: 'Denials' },
+            { id: 'errors', icon: AlertTriangle, label: 'Errors' },
             { id: 'reports', icon: FileDown, label: 'Exports' }
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-4 px-5 py-4 rounded-lg transition-all duration-200 ${
+              className={`w-full flex items-center gap-3 px-3 py-2 text-[13px] transition-all duration-150 ${
                 activeTab === item.id 
-                  ? 'bg-[#1871bd] text-white shadow-sm shadow-blue-500/30 font-bold scale-[1.02]' 
-                  : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800/50 font-medium'
+                  ? 'text-[#1871bd] font-semibold border-l-2 border-[#1871bd] bg-[#1871bd]/5' 
+                  : 'text-slate-500 hover:text-slate-300 border-l-2 border-transparent'
               }`}
             >
-              <item.icon size={20} />
-              <span className="text-sm">{item.label}</span>
+              <item.icon size={16} />
+              {item.label}
             </button>
           ))}
         </nav>
 
-        <div className="mt-auto space-y-6">
+        <div className="mt-auto px-5 space-y-4">
           <button 
             onClick={() => {
               const root = document.documentElement;
@@ -805,29 +809,29 @@ export function App() {
               else root.classList.add('dark');
               setIsDarkMode(!isDarkMode);
             }}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+            className="w-full flex items-center gap-2 text-[11px] text-slate-600 hover:text-slate-400 transition-colors"
           >
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-            <span className="font-bold text-sm">{isDarkMode ? 'Switch to Light' : 'Switch to Dark'}</span>
+            {isDarkMode ? <Sun size={14} /> : <Moon size={14} />}
+            {isDarkMode ? 'Light mode' : 'Dark mode'}
           </button>
           
-          <div className="p-5 rounded-xl bg-slate-100 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Server Metadata</span>
+          <div className="border-t border-slate-800 pt-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span className="text-[10px] text-slate-600 uppercase tracking-wider">Server</span>
             </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">Host</span>
-                <span className="text-xs font-bold truncate ml-2">{data.metadata.serverName}</span>
+            <div className="space-y-1.5 font-mono-brand text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-slate-600">host</span>
+                <span className="text-slate-400 truncate ml-2">{data.metadata.serverName}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">FlexLM</span>
-                <span className="text-xs font-bold">v{data.metadata.flexVersion}</span>
+              <div className="flex justify-between">
+                <span className="text-slate-600">flex</span>
+                <span className="text-slate-400">v{data.metadata.flexVersion}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">Port</span>
-                <span className="text-xs font-bold">{data.metadata.port}</span>
+              <div className="flex justify-between">
+                <span className="text-slate-600">port</span>
+                <span className="text-slate-400">{data.metadata.port}</span>
               </div>
             </div>
           </div>
@@ -835,96 +839,91 @@ export function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-4 pt-16 lg:p-10 lg:pt-10 max-w-7xl mx-auto w-full overflow-y-auto">
+      <main className="flex-1 p-4 pt-16 lg:p-8 lg:pt-8 max-w-7xl mx-auto w-full overflow-y-auto">
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 pb-6 border-b border-slate-800">
           <div>
-            <h1 className="text-4xl font-black tracking-tight mb-2">
-              {activeTab === 'overview' && 'Dashboard Overview'}
-              {activeTab === 'licenses' && 'License Utilization'}
+            <h1 className="text-2xl font-bold tracking-tight mb-1">
+              {activeTab === 'overview' && 'Overview'}
+              {activeTab === 'licenses' && 'License Inventory'}
               {activeTab === 'users' && 'User Analytics'}
               {activeTab === 'denials' && 'Denial Intelligence'}
               {activeTab === 'errors' && 'System Events'}
               {activeTab === 'reports' && 'Reports & Exports'}
             </h1>
-            <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-              <Clock size={16} />
-              <p className="text-sm font-medium">Log coverage starts from {data.metadata.startDate || 'Unknown Date'}</p>
-            </div>
+            <p className="text-xs text-slate-500 font-mono-brand">
+              {data.metadata.serverName} · {data.metadata.startDate || 'unknown date'} · {data.entries.length.toLocaleString()} lines parsed
+            </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <button 
               onClick={() => setData(null)}
-              className="px-6 py-3 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-bold transition-all border border-slate-200 dark:border-slate-700"
+              className="px-4 py-2 text-xs font-medium text-slate-500 hover:text-white border border-slate-800 hover:border-slate-600 transition-all"
             >
               Change Log
             </button>
             <button 
               onClick={downloadMasterPDF}
-              className="px-6 py-3 rounded-lg bg-[#1871bd] hover:bg-blue-700 text-white text-sm font-bold shadow-sm shadow-blue-500/20 transition-all flex items-center gap-3"
+              className="px-4 py-2 bg-[#1871bd] hover:bg-[#1565a0] text-white text-xs font-medium transition-all flex items-center gap-2"
             >
-              <Printer size={18} /> Export PDF
+              <Printer size={14} /> Export PDF
             </button>
           </div>
         </header>
 
-        <div id="capture-area" ref={reportRef} className="pb-20 space-y-12">
+        <div id="capture-area" ref={reportRef} className="pb-20 space-y-8">
           {activeTab === 'overview' && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                <StatCard title="Total Sessions" value={data.sessions.length.toLocaleString()} icon={Clock} color={COLORS.brandMid} />
-                <StatCard title="Unique Users" value={Object.keys(data.userStats).length} icon={Users} color={COLORS.brandBlue} />
-                <StatCard title="Denied Requests" value={data.denials.length} icon={ShieldAlert} color={COLORS.error} />
-                <StatCard title="Avg Use Duration" value={formatDuration(data.sessions.reduce((acc, s) => acc + (s.duration || 0), 0) / (data.sessions.length || 1))} icon={Activity} color={COLORS.success} />
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-800">
+                <StatCard title="Sessions" value={data.sessions.length.toLocaleString()} icon={Clock} color={COLORS.brandMid} />
+                <StatCard title="Users" value={Object.keys(data.userStats).length} icon={Users} color={COLORS.brandBlue} />
+                <StatCard title="Denials" value={data.denials.length} icon={ShieldAlert} color={COLORS.error} />
+                <StatCard title="Avg Duration" value={formatDuration(data.sessions.reduce((acc, s) => acc + (s.duration || 0), 0) / (data.sessions.length || 1))} icon={Activity} color={COLORS.success} />
               </div>
 
               <ExecutiveSummary data={data} />
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-8 opacity-5">
-                    <Activity size={120} />
-                  </div>
-                  <h3 className="text-xl font-black mb-8 flex items-center gap-3">
-                    <Activity size={24} className="text-[#1871bd]" /> License Checkout Trend
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-slate-800">
+                <div className="bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-slate-300">
+                    <Activity size={16} className="text-[#1871bd]" /> Checkout Trend
                   </h3>
-                  <div className="h-72 w-full">
+                  <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={data.timeSeriesUsage}>
                         <defs>
                           <linearGradient id="colorUsage" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={COLORS.brandMid} stopOpacity={0.4}/>
+                            <stop offset="5%" stopColor={COLORS.brandMid} stopOpacity={0.3}/>
                             <stop offset="95%" stopColor={COLORS.brandMid} stopOpacity={0}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#334155' : '#e2e8f0'} />
-                        <XAxis dataKey="time" stroke={isDarkMode ? '#94a3b8' : '#64748b'} fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis stroke={isDarkMode ? '#94a3b8' : '#64748b'} fontSize={12} tickLine={false} axisLine={false} />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                        <XAxis dataKey="time" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
                         <Tooltip 
-                          contentStyle={{ backgroundColor: isDarkMode ? '#1e2943' : '#fff', border: 'none', borderRadius: '20px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}
-                          itemStyle={{ fontWeight: 'bold' }}
+                          contentStyle={{ backgroundColor: '#1e2943', border: '1px solid #334155', borderRadius: '4px', fontSize: '12px' }}
                         />
-                        <Area type="monotone" dataKey="count" stroke={COLORS.brandMid} fillOpacity={1} fill="url(#colorUsage)" strokeWidth={4} />
+                        <Area type="monotone" dataKey="count" stroke={COLORS.brandMid} fillOpacity={1} fill="url(#colorUsage)" strokeWidth={2} />
                       </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                  <h3 className="text-xl font-black mb-8 flex items-center gap-3">
-                    <LayoutDashboard size={24} className="text-[#46b6e3]" /> Demand by Feature
+                <div className="bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold mb-4 flex items-center gap-2 text-slate-300">
+                    <LayoutDashboard size={16} className="text-[#46b6e3]" /> Demand by Feature
                   </h3>
-                  <div className="h-72 w-full">
+                  <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart layout="vertical" data={topFeaturesBySessions}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={isDarkMode ? '#334155' : '#e2e8f0'} />
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#1e293b" />
                         <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" stroke={isDarkMode ? '#94a3b8' : '#64748b'} fontSize={10} width={100} tickLine={false} axisLine={false} />
+                        <YAxis dataKey="name" type="category" stroke="#475569" fontSize={10} width={100} tickLine={false} axisLine={false} />
                         <Tooltip 
-                          cursor={{ fill: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)' }}
-                          contentStyle={{ backgroundColor: isDarkMode ? '#1e2943' : '#fff', border: 'none', borderRadius: '15px' }}
+                          cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                          contentStyle={{ backgroundColor: '#1e2943', border: '1px solid #334155', borderRadius: '4px', fontSize: '12px' }}
                         />
-                        <Bar dataKey="value" fill={COLORS.brandMid} radius={[0, 10, 10, 0]} barSize={24} />
+                        <Bar dataKey="value" fill={COLORS.brandMid} radius={[0, 3, 3, 0]} barSize={20} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -935,31 +934,31 @@ export function App() {
 
           {activeTab === 'licenses' && (
             <div className="space-y-10">
-               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
-                <div className="p-8 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50">
-                  <h3 className="text-2xl font-black">Feature Inventory & Health</h3>
+               <div className="bg-[#111827] border border-slate-800 overflow-hidden">
+                <div className="p-8 border-b border-slate-800 bg-[#0c1220]">
+                  <h3 className="text-lg font-bold">Feature Inventory & Health</h3>
                   <p className="text-slate-500 text-sm mt-1">Detailed utilization breakdown across all detected SolidWorks features.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-100/50 dark:bg-slate-900/30">
+                    <thead className="bg-[#0c1220]">
                       <tr>
-                        <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-500">License Name</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-500">Checkouts</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-500">Usage Time</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-500">Denials</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-slate-500">Status</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">License Name</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Checkouts</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Usage Time</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Denials</th>
+                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                    <tbody className="divide-y divide-slate-800/50">
                       {(Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][]).map(([name, stats]) => (
-                        <tr key={name} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                          <td className="px-8 py-6 font-bold text-sm">{name}</td>
-                          <td className="px-8 py-6 text-sm">{stats.checkouts.toLocaleString()}</td>
-                          <td className="px-8 py-6 text-sm">{formatDuration(stats.totalDuration)}</td>
-                          <td className={`px-8 py-6 text-sm font-black ${stats.denials > 0 ? 'text-red-500' : 'text-slate-400'}`}>{stats.denials}</td>
-                          <td className="px-8 py-6">
-                            <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                        <tr key={name} className="hover:bg-[#1a2332] transition-colors">
+                          <td className="px-5 py-3 font-bold text-sm">{name}</td>
+                          <td className="px-5 py-3 text-sm">{stats.checkouts.toLocaleString()}</td>
+                          <td className="px-5 py-3 text-sm">{formatDuration(stats.totalDuration)}</td>
+                          <td className={`px-5 py-3 text-sm font-black ${stats.denials > 0 ? 'text-red-500' : 'text-slate-400'}`}>{stats.denials}</td>
+                          <td className="px-5 py-3">
+                            <span className={`px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider ${
                               stats.denials > 5 ? 'bg-red-500/10 text-red-500' : 
                               stats.checkouts === 0 ? 'bg-slate-500/10 text-slate-400' : 'bg-green-500/10 text-green-500'
                             }`}>
@@ -978,44 +977,44 @@ export function App() {
           {activeTab === 'users' && (
             <div className="space-y-10">
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-                 <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
-                    <div className="p-8 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                      <h3 className="text-2xl font-black">Consumption by User</h3>
+                 <div className="lg:col-span-2 bg-[#111827] border border-slate-800 overflow-hidden">
+                    <div className="p-8 border-b border-slate-800 flex justify-between items-center">
+                      <h3 className="text-lg font-bold">Consumption by User</h3>
                       <div className="relative w-64">
                         <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="text" placeholder="Filter names..." className="w-full pl-12 pr-6 py-3 bg-slate-100 dark:bg-slate-900/50 rounded-lg text-xs outline-none focus:ring-2 ring-[#1871bd]" />
+                        <input type="text" placeholder="Filter names..." className="w-full pl-12 pr-6 py-3 bg-[#0c1220] rounded-lg text-xs outline-none focus:ring-2 ring-[#1871bd]" />
                       </div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-left">
-                        <thead className="bg-slate-100/50 dark:bg-slate-900/30">
+                        <thead className="bg-[#0c1220]">
                           <tr>
-                            <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Username</th>
-                            <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Total Sessions</th>
-                            <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Avg Duration</th>
-                            <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Denials</th>
+                            <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Username</th>
+                            <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Total Sessions</th>
+                            <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Avg Duration</th>
+                            <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Denials</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                        <tbody className="divide-y divide-slate-800/50">
                           {(Object.entries(data.userStats) as [string, { sessions: number; totalDuration: number; denials: number }][]).sort((a,b) => b[1].sessions - a[1].sessions).map(([name, stats]) => (
-                            <tr key={name} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                              <td className="px-8 py-6 text-sm font-black flex items-center gap-3">
+                            <tr key={name} className="hover:bg-[#1a2332]">
+                              <td className="px-5 py-3 text-sm font-black flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] text-slate-500">
                                   {name.charAt(0).toUpperCase()}
                                 </div>
                                 {name}
                               </td>
-                              <td className="px-8 py-6 text-sm">{stats.sessions}</td>
-                              <td className="px-8 py-6 text-sm font-medium">{formatDuration(stats.totalDuration / (stats.sessions || 1))}</td>
-                              <td className="px-8 py-6 text-sm font-black text-red-500/80">{stats.denials}</td>
+                              <td className="px-5 py-3 text-sm">{stats.sessions}</td>
+                              <td className="px-5 py-3 text-sm font-medium">{formatDuration(stats.totalDuration / (stats.sessions || 1))}</td>
+                              <td className="px-5 py-3 text-sm font-black text-red-500/80">{stats.denials}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                  </div>
-                 <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md flex flex-col">
-                    <h3 className="text-xl font-black mb-8">Top Power Users</h3>
+                 <div className="bg-[#111827] p-10 border border-slate-800 flex flex-col">
+                    <h3 className="text-sm font-semibold mb-8">Top Power Users</h3>
                     <div className="h-64 w-full mb-8">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
@@ -1058,8 +1057,8 @@ export function App() {
           {activeTab === 'denials' && (
             <div className="space-y-12">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md">
-                  <h3 className="text-xl font-black mb-8 flex items-center gap-3">
+                <div className="bg-[#111827] p-10 border border-slate-800">
+                  <h3 className="text-sm font-semibold mb-8 flex items-center gap-3">
                     <ShieldAlert size={24} className="text-red-500" /> Denial Heatmap (Daily)
                   </h3>
                   <div className="h-72 w-full">
@@ -1074,8 +1073,8 @@ export function App() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md">
-                  <h3 className="text-xl font-black mb-8">Most Common Denial Reasons</h3>
+                <div className="bg-[#111827] p-10 border border-slate-800">
+                  <h3 className="text-sm font-semibold mb-8">Most Common Denial Reasons</h3>
                   <div className="space-y-6">
                     {Array.from(new Set(data.denials.map(d => d.reason))).slice(0, 5).map(reason => {
                       const count = data.denials.filter(d => d.reason === reason).length;
@@ -1086,7 +1085,7 @@ export function App() {
                             <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{reason}</p>
                             <span className="text-xs font-black text-red-500">{count} Events</span>
                           </div>
-                          <div className="w-full h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div className="w-full h-3 bg-slate-800 overflow-hidden">
                             <div 
                               className="h-full bg-red-500 transition-all duration-1000 group-hover:bg-red-400" 
                               style={{ width: `${percentage}%` }}
@@ -1099,27 +1098,27 @@ export function App() {
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
-                <div className="p-8 border-b border-slate-200 dark:border-slate-700">
-                  <h3 className="text-2xl font-black">Denial Audit Trail</h3>
+              <div className="bg-[#111827] border border-slate-800 overflow-hidden">
+                <div className="p-8 border-b border-slate-800">
+                  <h3 className="text-lg font-bold">Denial Audit Trail</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-100/50 dark:bg-slate-900/30">
+                    <thead className="bg-[#0c1220]">
                       <tr>
-                        <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Timestamp</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">User</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Requested Feature</th>
-                        <th className="px-8 py-5 text-xs font-black uppercase text-slate-500">Reason / Return Code</th>
+                        <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Timestamp</th>
+                        <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">User</th>
+                        <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Requested Feature</th>
+                        <th className="px-5 py-3 text-xs font-black uppercase text-slate-500">Reason / Return Code</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
+                    <tbody className="divide-y divide-slate-800/50">
                       {data.denials.slice(0, 50).map((d, i) => (
-                        <tr key={i} className="hover:bg-red-50/30 dark:hover:bg-red-900/10 transition-colors">
-                          <td className="px-8 py-5 text-xs font-medium text-slate-400 font-mono">{d.time}</td>
-                          <td className="px-8 py-5 text-sm font-bold">{d.user}</td>
-                          <td className="px-8 py-5 text-sm font-medium text-blue-500">{d.feature}</td>
-                          <td className="px-8 py-5 text-sm text-red-500 font-bold">{d.reason}</td>
+                        <tr key={i} className="hover:bg-[#1a2332] transition-colors">
+                          <td className="px-5 py-3 text-xs font-medium text-slate-400 font-mono">{d.time}</td>
+                          <td className="px-5 py-3 text-sm font-bold">{d.user}</td>
+                          <td className="px-5 py-3 text-sm font-medium text-blue-500">{d.feature}</td>
+                          <td className="px-5 py-3 text-sm text-red-500 font-bold">{d.reason}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1132,28 +1131,28 @@ export function App() {
           {activeTab === 'errors' && (
             <div className="space-y-10">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="bg-[#111827] p-10 border border-slate-800">
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Fatal Errors</p>
-                  <p className="text-5xl font-black text-red-500">{data.errors.filter(e => e.type === 'ERROR').length}</p>
+                  <p className="text-3xl font-bold font-mono-brand text-red-500">{data.errors.filter(e => e.type === 'ERROR').length}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="bg-[#111827] p-10 border border-slate-800">
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Unsupported Features</p>
-                  <p className="text-5xl font-black text-amber-500">{data.errors.filter(e => e.type === 'UNSUPPORTED').length}</p>
+                  <p className="text-3xl font-bold font-mono-brand text-amber-500">{data.errors.filter(e => e.type === 'UNSUPPORTED').length}</p>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="bg-[#111827] p-10 border border-slate-800">
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Analyzed Lines</p>
-                  <p className="text-5xl font-black text-blue-500">{data.entries.length.toLocaleString()}</p>
+                  <p className="text-3xl font-bold font-mono-brand text-blue-500">{data.entries.length.toLocaleString()}</p>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-md">
-                <div className="p-8 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/80">
-                  <h3 className="text-xl font-black">System Event Trace</h3>
+              <div className="bg-[#111827] border border-slate-800 overflow-hidden">
+                <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-[#0c1220]">
+                  <h3 className="text-sm font-semibold">System Event Trace</h3>
                   <div className="px-4 py-2 bg-slate-200 dark:bg-slate-700 rounded-xl text-[10px] font-black uppercase">Debug View</div>
                 </div>
-                <div className="p-4 max-h-[600px] overflow-y-auto font-mono text-[11px] bg-slate-50 dark:bg-slate-900/50">
+                <div className="p-4 max-h-[600px] overflow-y-auto font-mono text-[11px] bg-[#0c1220]">
                   {data.errors.map((err, i) => (
-                    <div key={i} className="py-2.5 px-6 flex gap-6 hover:bg-slate-200 dark:hover:bg-slate-800/60 rounded-lg group transition-all">
+                    <div key={i} className="py-2.5 px-6 flex gap-6 hover:bg-[#1a2332] rounded-lg group transition-all">
                       <span className="text-slate-400 whitespace-nowrap">{err.time}</span>
                       <span className={`font-black ${err.type === 'ERROR' ? 'text-red-500' : 'text-amber-500'}`}>[{err.type}]</span>
                       <span className="text-slate-600 dark:text-slate-300 break-all">{err.raw}</span>
@@ -1176,41 +1175,41 @@ export function App() {
           {activeTab === 'reports' && (
             <div className="space-y-12">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md group hover:scale-[1.02] transition-transform">
-                  <div className="p-6 bg-blue-100 dark:bg-blue-900/30 rounded-xl w-fit mb-8 group-hover:rotate-6 transition-transform">
+                <div className="bg-[#111827] p-10 border border-slate-800 ">
+                  <div className="p-6 bg-[#1871bd]/10 w-fit mb-8 ">
                     <FileDown size={48} className="text-[#1871bd]" />
                   </div>
-                  <h3 className="text-2xl font-black mb-4">Executive Performance Report</h3>
+                  <h3 className="text-lg font-bold mb-4">Executive Performance Report</h3>
                   <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed font-medium">
                     Compiles all high-level metrics, usage charts, and system health alerts into a professional multi-page PDF document suitable for IT management and procurement stakeholders.
                   </p>
                   <button 
                     onClick={downloadMasterPDF}
-                    className="w-full py-5 bg-[#1871bd] hover:bg-blue-700 text-white font-black rounded-xl shadow-sm shadow-blue-500/30 transition-all flex items-center justify-center gap-4 text-lg"
+                    className="w-full py-5 bg-[#1871bd] hover:bg-blue-700 text-white font-black rounded-xl  transition-all flex items-center justify-center gap-4 text-lg"
                   >
                     <Printer size={22} /> Generate Executive PDF
                   </button>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-10 rounded-xl border border-slate-200 dark:border-slate-700 shadow-md flex flex-col">
-                  <div className="p-6 bg-purple-100 dark:bg-purple-900/30 rounded-xl w-fit mb-8">
+                <div className="bg-[#111827] p-10 border border-slate-800 flex flex-col">
+                  <div className="p-6 bg-purple-900/20 w-fit mb-8">
                     <Database size={48} className="text-purple-600" />
                   </div>
-                  <h3 className="text-2xl font-black mb-4">Raw Data Insights (CSV)</h3>
+                  <h3 className="text-lg font-bold mb-4">Raw Data Insights (CSV)</h3>
                   <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed font-medium">
                     Need further custom analysis? Export the structured dataset for PowerBI, Excel, or internal auditing tools.
                   </p>
                   <div className="grid grid-cols-2 gap-4 mt-auto">
-                    <button className="py-4 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
+                    <button className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
                       Session Table
                     </button>
-                    <button className="py-4 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
+                    <button className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
                       User Statistics
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-[#1e2943] border border-blue-500/20 p-10 rounded-xl shadow-md relative overflow-hidden">
+              <div className="bg-[#1e2943] border border-slate-800 p-6 relative overflow-hidden">
                 <div className="absolute -right-20 -bottom-20 p-10 opacity-10 rotate-12">
                    <Server size={300} className="text-white" />
                 </div>
@@ -1219,7 +1218,7 @@ export function App() {
                     <Info className="text-blue-300" size={32} />
                   </div>
                   <div>
-                    <h4 className="text-2xl font-black text-white mb-2 tracking-tight">Optimization Recommendation</h4>
+                    <h4 className="text-lg font-bold text-white mb-2 tracking-tight">Optimization Recommendation</h4>
                     <p className="text-blue-100/70 max-w-2xl leading-relaxed font-medium">
                       {(() => {
                         const dr = data ? ((data.denials.length / ((data.sessions.length + data.denials.length) || 1)) * 100) : 0;
