@@ -137,7 +137,7 @@ interface DashboardData {
 // --- Demo Log Generator ---
 const generateDemoLog = (): string => {
   const features = ['solidworks', 'swpremium', 'swsimulation', 'swepdm_cadeditorandweb', 'swepdm_viewer', 'swinspection_std'];
-  const featureSeats: Record<string, number> = { solidworks: 8, swpremium: 4, swsimulation: 2, swepdm_cadeditorandweb: 6, swepdm_viewer: 10, swinspection_std: 2 };
+  const featureSeats: Record<string, number> = { solidworks: 6, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 10, swepdm_viewer: 20, swinspection_std: 4 };
   const users = ['mthompson', 'jchen', 'agarcia', 'bwilson', 'kpatel', 'rjohnson', 'lnguyen', 'dsmith', 'cmartinez', 'ekim', 'twright', 'pbrown'];
   const hosts = ['ENG-WS01', 'ENG-WS02', 'ENG-WS03', 'DESIGN-PC1', 'DESIGN-PC2', 'LAB-WS01', 'MFG-PC01', 'MFG-PC02', 'REMOTE-01', 'REMOTE-02', 'QA-WS01', 'ADMIN-PC1'];
   const lines: string[] = [];
@@ -396,10 +396,17 @@ const parseLogFile = (content: string): DashboardData => {
       const vpMatch = message.match(/port (\d+)/);
       if (vpMatch) vendorPort = vpMatch[1];
     }
-    if (daemon.toLowerCase() === 'lmgrd' && message.includes('Server\'s nodeid')) {
-      // Often looks like: "hostname (lmgrd) Server's nodeid is..."
-      const hMatch = line.match(/^\s*[\d:]+\s+(\w+)\s+\(lmgrd\)/);
+    if (daemon.toLowerCase() === 'lmgrd' && (message.includes('Server\'s nodeid') || message.includes('Server nodeid'))) {
+      const hMatch = line.match(/^\s*[\d:]+\s+(\S+)\s+\(lmgrd\)/) || message.match(/^(\S+)'s Server nodeid/);
       if (hMatch) serverName = hMatch[1];
+    }
+    if (serverName === 'Unknown' && message.includes('started on') && daemon.toLowerCase() === 'lmgrd') {
+      const sMatch = message.match(/started on (\S+)/);
+      if (sMatch) serverName = sMatch[1];
+    }
+    if (serverName === 'Unknown' && message.includes('Server started on')) {
+      const sMatch = message.match(/Server started on (\S+)/);
+      if (sMatch) serverName = sMatch[1];
     }
     if (message.includes('license file(s)')) {
       const dMatch = message.match(/:(.*)/);
@@ -588,6 +595,7 @@ export function App() {
   const [optRules, setOptRules] = useState<{ type: 'MAX' | 'RESERVE' | 'INCLUDE' | 'EXCLUDE' | 'INCLUDE_BORROW' | 'EXCLUDE_BORROW', count: number, feature: string, groupOrUser: string, targetType: 'GROUP' | 'USER' | 'HOST' | 'INTERNET', versionFilter: string }[]>([]);
   const [customUsers, setCustomUsers] = useState<string[]>([]);
   const [licenseCosts, setLicenseCosts] = useState<Record<string, number>>({});
+  const [licenseSeats, setLicenseSeats] = useState<Record<string, number>>({});
   const [optCopied, setOptCopied] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -989,7 +997,7 @@ export function App() {
                 )}
               </label>
               <button
-                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setIsParsing(false); }, 300); }}
+                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 6, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 10, swepdm_viewer: 20, swinspection_std: 4 }); setLicenseCosts({ solidworks: 6000, swpremium: 8000, swsimulation: 12000, swepdm_cadeditorandweb: 4000, swepdm_viewer: 1500, swinspection_std: 5000 }); setIsParsing(false); }, 300); }}
                 className="mt-3 w-full py-2.5 border border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors"
               >
                 No log file handy? <span className="text-[#1871bd]">Try with sample data →</span>
@@ -1810,27 +1818,66 @@ export function App() {
 
             return (
               <div className="space-y-6 overflow-x-hidden">
-                {/* Cost input */}
+                {/* Intro */}
                 <div className="border-l-2 border-[#1871bd] bg-[#111827] px-5 py-4">
-                  <p className="text-sm text-slate-300 mb-1">Enter your annual cost per seat to calculate waste and savings opportunities.</p>
-                  <p className="text-[10px] text-slate-600">All calculations are based on {logDays} days of log data, annualized to 365 days. Costs are estimates — actual savings depend on your licensing agreement.</p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-slate-300 mb-1">Enter your seat counts and costs to find savings opportunities.</p>
+                      <p className="text-[10px] text-slate-600">All calculations are based on {logDays} days of log data. Without seat counts, we can only show peak concurrent usage — not whether you're over-provisioned.</p>
+                    </div>
+                    <label className="shrink-0 cursor-pointer px-3 py-2 border border-dashed border-[#1871bd]/50 text-[11px] text-[#1871bd] hover:text-[#46b6e3] hover:border-[#46b6e3]/50 transition-colors flex items-center gap-1.5">
+                      <Upload size={14} /> Import sw_d.lic
+                      <input type="file" accept="*/*" className="hidden" onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          const text = reader.result as string;
+                          // Parse INCREMENT lines for seat counts: INCREMENT feature SW_D ... count ...
+                          const lines = text.split('\n');
+                          const seats: Record<string, number> = {};
+                          lines.forEach(line => {
+                            const m = line.match(/^INCREMENT\s+(\S+)\s+\S+\s+\S+\s+\S+\s+(\d+)/i);
+                            if (m) seats[m[1].toLowerCase()] = parseInt(m[2]);
+                          });
+                          if (Object.keys(seats).length > 0) {
+                            const mapped: Record<string, number> = {};
+                            features.forEach(f => { if (seats[f.toLowerCase()]) mapped[f] = seats[f.toLowerCase()]; });
+                            setLicenseSeats(prev => ({ ...prev, ...mapped }));
+                          }
+                        };
+                        reader.readAsText(file);
+                        e.target.value = '';
+                      }} />
+                    </label>
+                  </div>
                 </div>
 
+                {/* Seat counts + costs */}
                 <div className="border border-slate-800 bg-[#111827] p-5">
-                  <h3 className="text-xs font-semibold text-slate-400 mb-3">Annual Cost per Seat</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <h3 className="text-xs font-semibold text-slate-400 mb-3">License Configuration</h3>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="grid grid-cols-[1fr_80px_100px] gap-2 text-[10px] text-slate-600 uppercase tracking-wider pb-1 border-b border-slate-800/50">
+                      <span>Feature</span>
+                      <span>Total Seats</span>
+                      <span>Annual $/Seat</span>
+                    </div>
                     {features.map(f => (
-                      <div key={f} className="flex items-center gap-2">
-                        <span className="text-[10px] text-[#46b6e3] font-mono-brand truncate flex-1">{SNL_FEATURES[f.toLowerCase()] || f}</span>
-                        <div className="flex items-center gap-1 shrink-0">
+                      <div key={f} className="grid grid-cols-[1fr_80px_100px] gap-2 items-center">
+                        <span className="text-[11px] text-[#46b6e3] font-mono-brand truncate">{SNL_FEATURES[f.toLowerCase()] || f}</span>
+                        <input type="number" value={licenseSeats[f] || ''} placeholder="?"
+                          onChange={e => setLicenseSeats({ ...licenseSeats, [f]: Number(e.target.value) })}
+                          className="bg-[#0c1220] border border-slate-800 text-white text-[11px] px-2 py-1 font-mono-brand focus:border-[#1871bd] focus:outline-none placeholder:text-slate-700" />
+                        <div className="flex items-center gap-1">
                           <span className="text-[10px] text-slate-600">$</span>
                           <input type="number" value={licenseCosts[f] || ''} placeholder="0"
                             onChange={e => setLicenseCosts({ ...licenseCosts, [f]: Number(e.target.value) })}
-                            className="bg-[#0c1220] border border-slate-800 text-white text-[11px] px-2 py-1 w-20 font-mono-brand focus:border-[#1871bd] focus:outline-none placeholder:text-slate-700" />
+                            className="bg-[#0c1220] border border-slate-800 text-white text-[11px] px-2 py-1 w-full font-mono-brand focus:border-[#1871bd] focus:outline-none placeholder:text-slate-700" />
                         </div>
                       </div>
                     ))}
                   </div>
+                  <p className="text-[10px] text-slate-600 mt-3">💡 Import your <span className="font-mono-brand">sw_d.lic</span> file to auto-fill seat counts from INCREMENT lines. Costs must be entered manually.</p>
                 </div>
 
                 {/* Right-Sizing Panel */}
@@ -1855,47 +1902,102 @@ export function App() {
                       let concurrent = 0, featurePeak = 0;
                       events.forEach(e => { concurrent += e.delta; featurePeak = Math.max(featurePeak, concurrent); });
 
-                      const totalSeats = featurePeak; // We don't know total from log, use peak as baseline
+                      const totalSeats = licenseSeats[f] || 0;
                       const denials = stats.denials;
                       const checkouts = stats.checkouts;
                       const denialRate = checkouts + denials > 0 ? (denials / (checkouts + denials)) * 100 : 0;
                       const cost = licenseCosts[f] || 0;
                       const avgDaily = featureSessions.length / logDays;
+                      const hasSeats = totalSeats > 0;
+                      const unusedSeats = hasSeats ? totalSeats - featurePeak : 0;
+                      const utilizationPct = hasSeats ? (featurePeak / totalSeats) * 100 : 0;
+
+                      // Calculate concurrent distribution for this feature
+                      // Sample concurrent usage at each event point, collect all values
+                      const concurrentSamples: number[] = [];
+                      let running = 0;
+                      events.forEach(e => { running += e.delta; concurrentSamples.push(running); });
+                      concurrentSamples.sort((a, b) => a - b);
+                      const p50 = concurrentSamples[Math.floor(concurrentSamples.length * 0.5)] || 0;
+                      const p90 = concurrentSamples[Math.floor(concurrentSamples.length * 0.9)] || 0;
+                      const p95 = concurrentSamples[Math.floor(concurrentSamples.length * 0.95)] || 0;
+                      const peakVsTypicalGap = featurePeak > 0 ? ((featurePeak - p90) / featurePeak) * 100 : 0;
                       
                       // Utilization categories
                       const isOverUtilized = denialRate > 3;
-                      const isUnderUtilized = featurePeak > 0 && avgDaily < featurePeak * 0.3 && denialRate === 0;
+                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats && totalSeats > 0;
+                      // Over-provisioned: has seat data, peak never comes close to total, no denials
+                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats >= 2 && utilizationPct < 75 && denialRate === 0;
+                      // Under-utilized pattern (no seat data): peak is way above typical usage
+                      const isUnderUtilized = !isOverUtilized && !isAtCapacity && !isOverProvisioned && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
                       
                       return (
-                        <div key={f} className={`p-4 border ${isOverUtilized ? 'border-red-500/40 bg-red-500/5' : isUnderUtilized ? 'border-slate-800 bg-[#0c1220]' : 'border-emerald-500/30 bg-[#0c1220]'}`}>
+                        <div key={f} className={`p-4 border ${isOverUtilized ? 'border-red-500/40 bg-red-500/5' : isAtCapacity ? 'border-orange-500/40 bg-orange-500/5' : (isUnderUtilized || isOverProvisioned) ? 'border-amber-500/40 bg-amber-500/5' : 'border-emerald-500/30 bg-[#0c1220]'}`}>
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                             <span className="font-mono-brand text-[#46b6e3] text-xs">{SNL_FEATURES[f.toLowerCase()] || f}</span>
                             {isOverUtilized && <span className="text-[10px] px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 font-semibold flex items-center gap-1"><TrendingUp size={10} /> Needs More Seats</span>}
-                            {isUnderUtilized && <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-500 border border-slate-700">Potentially Over-Provisioned</span>}
-                            {!isOverUtilized && !isUnderUtilized && <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Right-Sized</span>}
+                            {!isOverUtilized && isAtCapacity && <span className="text-[10px] px-2 py-0.5 bg-orange-500/20 text-orange-400 border border-orange-500/30 font-semibold flex items-center gap-1"><AlertTriangle size={10} /> At Capacity</span>}
+                            {!isOverUtilized && !isAtCapacity && (isUnderUtilized || isOverProvisioned) && <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold flex items-center gap-1"><TrendingDown size={10} /> Potential Savings</span>}
+                            {!isOverUtilized && !isAtCapacity && !isUnderUtilized && !isOverProvisioned && <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Right-Sized</span>}
                           </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-[11px]">
+                            {hasSeats && (
+                              <div>
+                                <p className="text-slate-600 text-[10px]">Total seats</p>
+                                <p className="text-white font-mono-brand">{totalSeats}</p>
+                              </div>
+                            )}
                             <div>
                               <p className="text-slate-600 text-[10px]">Peak concurrent</p>
                               <p className="text-white font-mono-brand">{featurePeak}</p>
                             </div>
                             <div>
-                              <p className="text-slate-600 text-[10px]">Avg daily checkouts</p>
-                              <p className="text-white font-mono-brand">{avgDaily.toFixed(1)}</p>
+                              <p className="text-slate-600 text-[10px]">Typical (90th %ile)</p>
+                              <p className="text-white font-mono-brand">{p90}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-600 text-[10px]">Median</p>
+                              <p className="text-white font-mono-brand">{p50}</p>
                             </div>
                             <div>
                               <p className="text-slate-600 text-[10px]">Denial rate</p>
                               <p className={`font-mono-brand ${denialRate > 3 ? 'text-red-400' : 'text-white'}`}>{denialRate.toFixed(1)}%</p>
                             </div>
-                            <div>
-                              <p className="text-slate-600 text-[10px]">Total denials</p>
-                              <p className={`font-mono-brand ${denials > 0 ? 'text-red-400' : 'text-white'}`}>{denials}</p>
-                            </div>
+                            {hasSeats && (
+                              <div>
+                                <p className="text-slate-600 text-[10px]">Utilization</p>
+                                <p className={`font-mono-brand ${utilizationPct > 90 ? 'text-red-400' : utilizationPct < 50 ? 'text-amber-400' : 'text-white'}`}>{utilizationPct.toFixed(0)}%</p>
+                              </div>
+                            )}
                           </div>
+                          {/* Visual bar: typical vs peak vs seats */}
+                          {featurePeak > 0 && (
+                            <div className="mt-3 h-2 bg-[#0c1220] border border-slate-800 relative overflow-hidden">
+                              {hasSeats && <div className="absolute inset-0 bg-slate-800/30" style={{ width: '100%' }} />}
+                              <div className="absolute inset-y-0 left-0 bg-[#1871bd]/40" style={{ width: `${hasSeats ? (p90 / totalSeats) * 100 : (p90 / featurePeak) * 100}%` }} />
+                              <div className="absolute inset-y-0 left-0 bg-[#1871bd]" style={{ width: `${hasSeats ? (featurePeak / totalSeats) * 100 : 100}%`, opacity: 0.3 }} />
+                              <div className="absolute inset-y-0 left-0 bg-[#46b6e3]" style={{ width: `${hasSeats ? (p50 / totalSeats) * 100 : (p50 / featurePeak) * 100}%` }} />
+                            </div>
+                          )}
+                          {featurePeak > 0 && (
+                            <div className="flex gap-4 mt-1 text-[9px] text-slate-600">
+                              <span><span className="inline-block w-2 h-1.5 bg-[#46b6e3] mr-1" />Median</span>
+                              <span><span className="inline-block w-2 h-1.5 bg-[#1871bd]/40 mr-1" />Typical</span>
+                              <span><span className="inline-block w-2 h-1.5 bg-[#1871bd]/30 mr-1" />Peak</span>
+                              {hasSeats && <span><span className="inline-block w-2 h-1.5 bg-slate-800/30 mr-1 border border-slate-700" />Total seats</span>}
+                            </div>
+                          )}
 
                           {/* Cost impact — over-utilization gets more visual weight */}
-                          {cost > 0 && (
-                            <div className={`mt-3 pt-3 border-t ${isOverUtilized ? 'border-red-500/30' : 'border-slate-800/50'}`}>
+                          {(cost > 0 || isUnderUtilized || isOverProvisioned || isAtCapacity) && (
+                            <div className={`mt-3 pt-3 border-t ${isOverUtilized ? 'border-red-500/30' : isAtCapacity ? 'border-orange-500/30' : (isUnderUtilized || isOverProvisioned) ? 'border-amber-500/30' : 'border-slate-800/50'}`}>
+                              {isAtCapacity && !isOverUtilized && (
+                                <div className="bg-orange-500/10 border border-orange-500/20 p-3 mb-2">
+                                  <p className="text-orange-400 text-xs font-semibold mb-1">⚠ Running at full capacity</p>
+                                  <p className="text-slate-400 text-[11px]">Peak concurrent usage hit all <span className="font-mono-brand text-white">{totalSeats}</span> seats. No denials yet, but one more user and they'll start getting blocked.</p>
+                                  {cost > 0 && <p className="text-orange-300 text-xs mt-2 font-semibold">Adding 1 seat ({`$${cost.toLocaleString()}/yr`}) would provide a safety buffer.</p>}
+                                </div>
+                              )}
                               {isOverUtilized && (
                                 <div className="bg-red-500/10 border border-red-500/20 p-3 mb-2">
                                   <p className="text-red-400 text-xs font-semibold mb-1">⚠ Engineer downtime from denials</p>
@@ -1909,14 +2011,24 @@ export function App() {
                                   </p>
                                 </div>
                               )}
-                              {isUnderUtilized && (
-                                <p className="text-slate-500 text-[11px]">
-                                  Low daily usage relative to peak. Could potentially reduce by 1 seat saving <span className="text-slate-400 font-mono-brand">${cost.toLocaleString()}/yr</span>, 
-                                  but monitor for seasonal spikes before cutting.
-                                </p>
+                              {(isUnderUtilized || isOverProvisioned) && (
+                                <div className="bg-amber-500/10 border border-amber-500/20 p-3">
+                                  <p className="text-amber-400 text-xs font-semibold mb-1">💰 Possible cost savings</p>
+                                  <p className="text-slate-400 text-[11px]">
+                                    Peak concurrent was <span className="font-mono-brand text-white">{featurePeak}</span> but 90% of the time only <span className="font-mono-brand text-white">{p90}</span> {p90 === 1 ? 'seat is' : 'seats are'} in use (median: {p50}).
+                                    {hasSeats && <> You have <span className="font-mono-brand text-white">{totalSeats}</span> seats — <span className="text-amber-400 font-mono-brand">{unusedSeats}</span> were never used, even at peak.</>}
+                                  </p>
+                                  {hasSeats && cost > 0 && unusedSeats >= 2 && (() => {
+                                    const canCut = Math.max(1, Math.min(unusedSeats - 1, Math.floor(unusedSeats * 0.5)));
+                                    return <p className="text-amber-300 text-xs mt-2 font-semibold">Reducing by {canCut} seat{canCut > 1 ? 's' : ''} could save <span className="font-mono-brand">${(canCut * cost).toLocaleString()}/yr</span> while keeping a buffer above peak.</p>;
+                                  })()}
+                                  {!hasSeats && cost > 0 && <p className="text-amber-400/70 text-[11px] mt-1">Enter your seat count above to calculate exact savings.</p>}
+                                  {!cost && <p className="text-amber-400/70 text-[11px] mt-1">Enter cost per seat above to calculate dollar savings.</p>}
+                                  <p className="text-slate-500 text-[10px] mt-2">Always keep 1-2 seats above peak before reducing. Monitor for seasonal spikes.</p>
+                                </div>
                               )}
-                              {!isOverUtilized && !isUnderUtilized && (
-                                <p className="text-emerald-400/70 text-[11px]">Current seat count appears well-matched to demand.</p>
+                              {!isOverUtilized && !isUnderUtilized && !isOverProvisioned && cost > 0 && (
+                                <p className="text-emerald-400/70 text-[11px]">✓ Current seat count appears well-matched to demand.</p>
                               )}
                             </div>
                           )}
