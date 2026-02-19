@@ -137,7 +137,7 @@ interface DashboardData {
 // --- Demo Log Generator ---
 const generateDemoLog = (): string => {
   const features = ['solidworks', 'swpremium', 'swsimulation', 'swepdm_cadeditorandweb', 'swepdm_viewer', 'swinspection_std'];
-  const featureSeats: Record<string, number> = { solidworks: 5, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 };
+  const featureSeats: Record<string, number> = { solidworks: 4, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 4, swepdm_viewer: 15, swinspection_std: 4 };
   const users = ['mthompson', 'jchen', 'agarcia', 'bwilson', 'kpatel', 'rjohnson', 'lnguyen', 'dsmith', 'cmartinez', 'ekim', 'twright', 'pbrown'];
   const hosts = ['ENG-WS01', 'ENG-WS02', 'ENG-WS03', 'DESIGN-PC1', 'DESIGN-PC2', 'LAB-WS01', 'MFG-PC01', 'MFG-PC02', 'REMOTE-01', 'REMOTE-02', 'QA-WS01', 'ADMIN-PC1'];
   const lines: string[] = [];
@@ -997,7 +997,7 @@ export function App() {
                 )}
               </label>
               <button
-                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 5, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
+                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 4, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 4, swepdm_viewer: 15, swinspection_std: 4 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
                 className="mt-3 w-full py-2.5 border border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors"
               >
                 No log file handy? <span className="text-[#1871bd]">Try with sample data →</span>
@@ -1923,16 +1923,24 @@ export function App() {
                       const p95 = concurrentSamples[Math.floor(concurrentSamples.length * 0.95)] || 0;
                       const peakVsTypicalGap = featurePeak > 0 ? ((featurePeak - p90) / featurePeak) * 100 : 0;
                       
-                      // Utilization categories — simple rules:
-                      // peak >= seats AND denials → needs seats
-                      // peak = seats (no denials) or peak = seats-1 → right-sized
-                      // seats - peak > 1 → over-provisioned
-                      const isOverUtilized = denialRate > 3 && (!hasSeats || featurePeak >= totalSeats);
+                      // ROI pre-calc for categorization: if denials exist but adding seats costs more than the productivity loss, it's right-sized
+                      const ENG_HOURLY_PRE = 40;
+                      const annualizedDenialsPre = logDays > 0 ? Math.round(denials * (365 / logDays)) : denials;
+                      const annualDenialCostPre = annualizedDenialsPre * 0.5 * ENG_HOURLY_PRE; // 30min @ $40/hr
+                      const seatsNeededPre = hasSeats ? Math.max(1, featurePeak - totalSeats + 1) : 1;
+                      const seatInvestmentPre = seatsNeededPre * cost;
+                      const roiJustified = cost > 0 && annualDenialCostPre > seatInvestmentPre;
+                      
+                      // Utilization categories
+                      // Over-utilized: denials AND seat cost is justified by lost productivity (or no cost entered)
+                      const isOverUtilized = denialRate > 3 && (!hasSeats || featurePeak >= totalSeats) && (roiJustified || cost === 0);
                       const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats && totalSeats > 0;
-                      const isRightSized = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats <= 1;
-                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats > 1;
+                      // Over-provisioned: less than half seats used at peak
+                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && utilizationPct < 50 && unusedSeats > 2;
                       // Under-utilized pattern (no seat data): peak is way above typical usage
-                      const isUnderUtilized = !isOverUtilized && !hasSeats && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
+                      const isUnderUtilized = !isOverUtilized && !isAtCapacity && !isOverProvisioned && !hasSeats && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
+                      // Everything else with seats = right-sized
+                      const isRightSized = hasSeats && !isOverUtilized && !isAtCapacity && !isOverProvisioned;
                       
                       return (
                         <div key={f} className={`p-4 border ${isOverUtilized ? 'border-red-500/40 bg-red-500/5' : isAtCapacity ? 'border-orange-500/40 bg-orange-500/5' : (isUnderUtilized || isOverProvisioned) ? 'border-amber-500/40 bg-amber-500/5' : 'border-emerald-500/30 bg-[#0c1220]'}`}>
