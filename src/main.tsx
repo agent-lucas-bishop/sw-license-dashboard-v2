@@ -137,7 +137,7 @@ interface DashboardData {
 // --- Demo Log Generator ---
 const generateDemoLog = (): string => {
   const features = ['solidworks', 'swpremium', 'swsimulation', 'swepdm_cadeditorandweb', 'swepdm_viewer', 'swinspection_std'];
-  const featureSeats: Record<string, number> = { solidworks: 5, swpremium: 3, swsimulation: 1, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 };
+  const featureSeats: Record<string, number> = { solidworks: 5, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 };
   const users = ['mthompson', 'jchen', 'agarcia', 'bwilson', 'kpatel', 'rjohnson', 'lnguyen', 'dsmith', 'cmartinez', 'ekim', 'twright', 'pbrown'];
   const hosts = ['ENG-WS01', 'ENG-WS02', 'ENG-WS03', 'DESIGN-PC1', 'DESIGN-PC2', 'LAB-WS01', 'MFG-PC01', 'MFG-PC02', 'REMOTE-01', 'REMOTE-02', 'QA-WS01', 'ADMIN-PC1'];
   const lines: string[] = [];
@@ -176,7 +176,7 @@ const generateDemoLog = (): string => {
 
     // Weekdays get 15-30 events, weekends 2-5
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const eventCount = isWeekend ? rng(2, 5) : rng(15, 30);
+    const eventCount = isWeekend ? rng(1, 3) : rng(10, 20);
 
     for (let ev = 0; ev < eventCount; ev++) {
       const hour = isWeekend ? rng(9, 17) : rng(6, 20);
@@ -997,7 +997,7 @@ export function App() {
                 )}
               </label>
               <button
-                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 5, swpremium: 3, swsimulation: 1, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
+                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 5, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
                 className="mt-3 w-full py-2.5 border border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors"
               >
                 No log file handy? <span className="text-[#1871bd]">Try with sample data →</span>
@@ -1923,14 +1923,16 @@ export function App() {
                       const p95 = concurrentSamples[Math.floor(concurrentSamples.length * 0.95)] || 0;
                       const peakVsTypicalGap = featurePeak > 0 ? ((featurePeak - p90) / featurePeak) * 100 : 0;
                       
-                      // Utilization categories
-                      // Over-utilized: denials happened AND current seat count still can't cover peak
+                      // Utilization categories — simple rules:
+                      // peak >= seats AND denials → needs seats
+                      // peak = seats (no denials) or peak = seats-1 → right-sized
+                      // seats - peak > 1 → over-provisioned
                       const isOverUtilized = denialRate > 3 && (!hasSeats || featurePeak >= totalSeats);
-                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats * 0.9 && totalSeats > 0;
-                      // Over-provisioned: has seat data, peak never comes close to total
-                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats >= 2 && utilizationPct < 75;
+                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats && totalSeats > 0;
+                      const isRightSized = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats <= 1;
+                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats > 1;
                       // Under-utilized pattern (no seat data): peak is way above typical usage
-                      const isUnderUtilized = !isOverUtilized && !isAtCapacity && !isOverProvisioned && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
+                      const isUnderUtilized = !isOverUtilized && !hasSeats && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
                       
                       return (
                         <div key={f} className={`p-4 border ${isOverUtilized ? 'border-red-500/40 bg-red-500/5' : isAtCapacity ? 'border-orange-500/40 bg-orange-500/5' : (isUnderUtilized || isOverProvisioned) ? 'border-amber-500/40 bg-amber-500/5' : 'border-emerald-500/30 bg-[#0c1220]'}`}>
@@ -2019,16 +2021,12 @@ export function App() {
                                   }
                                 });
                                 
-                                // Use measured wait time if we have enough data, otherwise estimate conservatively
+                                // Conservative: 30 min lost per denial (waiting + context switch)
                                 const measuredWaits = waitTimesMin.length;
-                                const avgWaitMin = measuredWaits >= 3
-                                  ? waitTimesMin.reduce((a, b) => a + b, 0) / measuredWaits
-                                  : 45; // conservative fallback
                                 const medianWaitMin = measuredWaits >= 3
                                   ? waitTimesMin.sort((a, b) => a - b)[Math.floor(measuredWaits / 2)]
-                                  : avgWaitMin;
-                                // Use median (more robust to outliers) + context-switch overhead
-                                const effectiveWaitMin = medianWaitMin + 10; // +10 min for context-switching overhead
+                                  : 30;
+                                const effectiveWaitMin = Math.min(medianWaitMin, 30); // cap at 30 min to stay conservative
                                 
                                 const ENG_HOURLY = 40;
                                 const annualizedDenials = logDays > 0 ? Math.round(denials * (365 / logDays)) : denials;
@@ -2086,13 +2084,12 @@ export function App() {
                                     Peak concurrent was <span className="font-mono-brand text-white">{featurePeak}</span> but 90% of the time only <span className="font-mono-brand text-white">{p90}</span> {p90 === 1 ? 'seat is' : 'seats are'} in use (median: {p50}).
                                     {hasSeats && <> You have <span className="font-mono-brand text-white">{totalSeats}</span> seats — <span className="text-amber-400 font-mono-brand">{unusedSeats}</span> were never used, even at peak.</>}
                                   </p>
-                                  {hasSeats && cost > 0 && unusedSeats >= 2 && (() => {
-                                    const canCut = Math.max(1, Math.min(unusedSeats - 1, Math.floor(unusedSeats * 0.5)));
-                                    return <p className="text-amber-300 text-xs mt-2 font-semibold">Reducing by {canCut} seat{canCut > 1 ? 's' : ''} could save <span className="font-mono-brand">${(canCut * cost).toLocaleString()}/yr</span> while keeping a buffer above peak.</p>;
+                                  {hasSeats && cost > 0 && (() => {
+                                    const canCut = unusedSeats - 1; // keep 1 above peak
+                                    return canCut > 0 ? <p className="text-amber-300 text-xs mt-2 font-semibold">Reducing by {canCut} seat{canCut > 1 ? 's' : ''} could save <span className="font-mono-brand">${(canCut * cost).toLocaleString()}/yr</span>.</p> : null;
                                   })()}
                                   {!hasSeats && cost > 0 && <p className="text-amber-400/70 text-[11px] mt-1">Enter your seat count above to calculate exact savings.</p>}
                                   {!cost && <p className="text-amber-400/70 text-[11px] mt-1">Enter cost per seat above to calculate dollar savings.</p>}
-                                  <p className="text-slate-500 text-[10px] mt-2">Always keep 1-2 seats above peak before reducing. Monitor for seasonal spikes.</p>
                                 </div>
                               )}
                               {!isOverUtilized && !isUnderUtilized && !isOverProvisioned && !isAtCapacity && hasSeats && (
