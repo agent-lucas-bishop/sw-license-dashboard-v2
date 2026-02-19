@@ -428,8 +428,8 @@ export function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [isParsing, setIsParsing] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [filterUser, setFilterUser] = useState<string>('');
-  const [filterFeature, setFilterFeature] = useState<string>('');
+  const [filterUsers, setFilterUsers] = useState<string[]>([]);
+  const [filterFeatures, setFilterFeatures] = useState<string[]>([]);
   const reportRef = useRef<HTMLDivElement>(null);
 
   // All unique users and features for filter dropdowns
@@ -446,18 +446,18 @@ export function App() {
   // Filtered data — recomputes all analytics when filters change
   const filteredData = useMemo(() => {
     if (!data) return null;
-    if (!filterUser && !filterFeature) return data;
+    if (filterUsers.length === 0 && filterFeatures.length === 0) return data;
 
     const filteredSessions = data.sessions.filter(s => 
-      (!filterUser || s.user === filterUser) && 
-      (!filterFeature || s.feature === filterFeature)
+      (filterUsers.length === 0 || filterUsers.includes(s.user)) && 
+      (filterFeatures.length === 0 || filterFeatures.includes(s.feature))
     );
     const filteredDenials = data.denials.filter(d => 
-      (!filterUser || d.user === filterUser) && 
-      (!filterFeature || d.feature === filterFeature)
+      (filterUsers.length === 0 || (d.user && filterUsers.includes(d.user))) && 
+      (filterFeatures.length === 0 || (d.feature && filterFeatures.includes(d.feature)))
     );
     const filteredErrors = data.errors.filter(e =>
-      (!filterFeature || e.feature === filterFeature)
+      (filterFeatures.length === 0 || (e.feature && filterFeatures.includes(e.feature)))
     );
     const analytics = computeAnalytics(filteredSessions, filteredDenials);
 
@@ -468,7 +468,7 @@ export function App() {
       errors: filteredErrors,
       ...analytics,
     };
-  }, [data, filterUser, filterFeature]);
+  }, [data, filterUsers, filterFeatures]);
 
   // Use filteredData everywhere (aliased as 'd' for brevity in JSX)
   const d = filteredData;
@@ -1001,38 +1001,57 @@ export function App() {
         </header>
 
         {/* Filter Bar */}
-        <div className="flex flex-wrap items-center gap-3 mb-6 pb-4 border-b border-slate-800/50">
-          <Filter size={14} className="text-slate-600" />
-          <select
-            value={filterUser}
-            onChange={e => setFilterUser(e.target.value)}
-            className="bg-[#111827] border border-slate-800 text-xs text-slate-300 px-3 py-1.5 focus:border-[#1871bd] focus:outline-none min-w-[160px]"
-          >
-            <option value="">All Users</option>
-            {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
-          </select>
-          <select
-            value={filterFeature}
-            onChange={e => setFilterFeature(e.target.value)}
-            className="bg-[#111827] border border-slate-800 text-xs text-slate-300 px-3 py-1.5 focus:border-[#1871bd] focus:outline-none min-w-[200px]"
-          >
-            <option value="">All Features</option>
-            {allFeatures.map(f => <option key={f} value={f}>{f}</option>)}
-          </select>
-          {(filterUser || filterFeature) && (
-            <button
-              onClick={() => { setFilterUser(''); setFilterFeature(''); }}
-              className="text-[11px] text-slate-500 hover:text-white px-2 py-1 border border-slate-800 hover:border-slate-600 transition-all flex items-center gap-1"
-            >
-              <X size={12} /> Clear filters
-            </button>
-          )}
-          {(filterUser || filterFeature) && d && (
-            <span className="text-[11px] text-slate-600 ml-auto">
-              Showing {d.sessions.length.toLocaleString()} sessions · {d.denials.length} denials
-              {filterUser && <> · user: <span className="text-[#46b6e3]">{filterUser}</span></>}
-              {filterFeature && <> · feature: <span className="text-[#46b6e3]">{filterFeature}</span></>}
-            </span>
+        <div className="mb-6 pb-4 border-b border-slate-800/50">
+          <div className="flex flex-wrap items-center gap-3">
+            <Filter size={14} className="text-slate-600 shrink-0" />
+            <div className="relative group">
+              <select
+                value=""
+                onChange={e => { if (e.target.value && !filterUsers.includes(e.target.value)) setFilterUsers([...filterUsers, e.target.value]); e.target.value = ''; }}
+                className="bg-[#111827] border border-slate-800 text-xs text-slate-400 px-3 py-1.5 focus:border-[#1871bd] focus:outline-none min-w-[140px] cursor-pointer"
+              >
+                <option value="">+ Add user</option>
+                {allUsers.filter(u => !filterUsers.includes(u)).map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="relative group">
+              <select
+                value=""
+                onChange={e => { if (e.target.value && !filterFeatures.includes(e.target.value)) setFilterFeatures([...filterFeatures, e.target.value]); e.target.value = ''; }}
+                className="bg-[#111827] border border-slate-800 text-xs text-slate-400 px-3 py-1.5 focus:border-[#1871bd] focus:outline-none min-w-[160px] cursor-pointer"
+              >
+                <option value="">+ Add feature</option>
+                {allFeatures.filter(f => !filterFeatures.includes(f)).map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            {(filterUsers.length > 0 || filterFeatures.length > 0) && (
+              <button
+                onClick={() => { setFilterUsers([]); setFilterFeatures([]); }}
+                className="text-[11px] text-slate-500 hover:text-white px-2 py-1 border border-slate-800 hover:border-slate-600 transition-all flex items-center gap-1"
+              >
+                <X size={12} /> Clear all
+              </button>
+            )}
+            {(filterUsers.length > 0 || filterFeatures.length > 0) && d && (
+              <span className="text-[11px] text-slate-600 ml-auto">
+                {d.sessions.length.toLocaleString()} sessions · {d.denials.length} denials
+              </span>
+            )}
+          </div>
+          {/* Active filter chips */}
+          {(filterUsers.length > 0 || filterFeatures.length > 0) && (
+            <div className="flex flex-wrap gap-1.5 mt-2 ml-7">
+              {filterUsers.map(u => (
+                <button key={u} onClick={() => setFilterUsers(filterUsers.filter(x => x !== u))} className="flex items-center gap-1 px-2 py-0.5 bg-[#1871bd]/10 border border-[#1871bd]/30 text-[#46b6e3] text-[11px] hover:bg-[#1871bd]/20 transition-colors">
+                  <Users size={10} /> {u} <X size={10} className="opacity-50 hover:opacity-100" />
+                </button>
+              ))}
+              {filterFeatures.map(f => (
+                <button key={f} onClick={() => setFilterFeatures(filterFeatures.filter(x => x !== f))} className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] hover:bg-emerald-500/20 transition-colors">
+                  <Activity size={10} /> {f} <X size={10} className="opacity-50 hover:opacity-100" />
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
