@@ -137,7 +137,7 @@ interface DashboardData {
 // --- Demo Log Generator ---
 const generateDemoLog = (): string => {
   const features = ['solidworks', 'swpremium', 'swsimulation', 'swepdm_cadeditorandweb', 'swepdm_viewer', 'swinspection_std'];
-  const featureSeats: Record<string, number> = { solidworks: 6, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 10, swepdm_viewer: 20, swinspection_std: 4 };
+  const featureSeats: Record<string, number> = { solidworks: 5, swpremium: 3, swsimulation: 1, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 };
   const users = ['mthompson', 'jchen', 'agarcia', 'bwilson', 'kpatel', 'rjohnson', 'lnguyen', 'dsmith', 'cmartinez', 'ekim', 'twright', 'pbrown'];
   const hosts = ['ENG-WS01', 'ENG-WS02', 'ENG-WS03', 'DESIGN-PC1', 'DESIGN-PC2', 'LAB-WS01', 'MFG-PC01', 'MFG-PC02', 'REMOTE-01', 'REMOTE-02', 'QA-WS01', 'ADMIN-PC1'];
   const lines: string[] = [];
@@ -997,7 +997,7 @@ export function App() {
                 )}
               </label>
               <button
-                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 6, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 10, swepdm_viewer: 20, swinspection_std: 4 }); setLicenseCosts({ solidworks: 6000, swpremium: 8000, swsimulation: 12000, swepdm_cadeditorandweb: 4000, swepdm_viewer: 1500, swinspection_std: 5000 }); setIsParsing(false); }, 300); }}
+                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 5, swpremium: 3, swsimulation: 1, swepdm_cadeditorandweb: 8, swepdm_viewer: 25, swinspection_std: 6 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
                 className="mt-3 w-full py-2.5 border border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors"
               >
                 No log file handy? <span className="text-[#1871bd]">Try with sample data →</span>
