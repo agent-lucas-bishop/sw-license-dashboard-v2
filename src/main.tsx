@@ -1924,10 +1924,11 @@ export function App() {
                       const peakVsTypicalGap = featurePeak > 0 ? ((featurePeak - p90) / featurePeak) * 100 : 0;
                       
                       // Utilization categories
-                      const isOverUtilized = denialRate > 3;
-                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats && totalSeats > 0;
-                      // Over-provisioned: has seat data, peak never comes close to total, no denials
-                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats >= 2 && utilizationPct < 75 && denialRate === 0;
+                      // Over-utilized: denials happened AND current seat count still can't cover peak
+                      const isOverUtilized = denialRate > 3 && (!hasSeats || featurePeak >= totalSeats);
+                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats * 0.9 && totalSeats > 0;
+                      // Over-provisioned: has seat data, peak never comes close to total
+                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats >= 2 && utilizationPct < 75;
                       // Under-utilized pattern (no seat data): peak is way above typical usage
                       const isUnderUtilized = !isOverUtilized && !isAtCapacity && !isOverProvisioned && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
                       
@@ -2006,9 +2007,15 @@ export function App() {
                                     (waiting, retrying, context-switching), that's roughly <span className="text-red-400 font-mono-brand font-semibold">
                                     {Math.round(denials * (15 + denialRate * 2) / 60)} hours</span> of engineer time lost.
                                   </p>
-                                  <p className="text-red-300 text-xs mt-2 font-semibold">
-                                    Adding {Math.ceil(denialRate / 10)} seat{Math.ceil(denialRate / 10) > 1 ? 's' : ''} would cost ~${(Math.ceil(denialRate / 10) * cost).toLocaleString()}/yr but could recover significant productivity.
-                                  </p>
+                                  {hasSeats && cost > 0 && (() => {
+                                    // Recommend enough seats to cover peak concurrent that caused denials
+                                    const seatsNeeded = Math.max(1, featurePeak - totalSeats + 1);
+                                    return <p className="text-red-300 text-xs mt-2 font-semibold">
+                                      Adding {seatsNeeded} seat{seatsNeeded > 1 ? 's' : ''} (to {totalSeats + seatsNeeded} total) would cost ~${(seatsNeeded * cost).toLocaleString()}/yr but could recover significant productivity.
+                                    </p>;
+                                  })()}
+                                  {hasSeats && !cost && <p className="text-red-300/70 text-[11px] mt-1">Enter cost per seat above to calculate the investment needed.</p>}
+                                  {!hasSeats && <p className="text-red-300/70 text-[11px] mt-1">Enter your seat count above for specific recommendations.</p>}
                                 </div>
                               )}
                               {(isUnderUtilized || isOverProvisioned) && (
