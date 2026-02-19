@@ -2000,11 +2000,39 @@ export function App() {
                                 </div>
                               )}
                               {isOverUtilized && (() => {
-                                // ROI-based analysis: denial cost impact vs seat cost
-                                const ENG_HOURLY = 40; // assumed flat engineering cost
-                                const avgWaitHrs = 0.75; // ~45 min avg wait per denial (waiting, retrying, context-switching)
+                                // Measure actual wait times: for each denial, find same user's next checkout of same feature
+                                const featureDenials = d.denials.filter(den => den.feature === f);
+                                const waitTimesMin: number[] = [];
+                                featureDenials.forEach(den => {
+                                  if (!den.user || !den.date || !den.time) return;
+                                  const denialTime = new Date(`${den.date} ${den.time}`);
+                                  if (isNaN(denialTime.getTime())) return;
+                                  // Find next checkout by same user for same feature
+                                  const nextCheckout = featureSessions
+                                    .filter(s => s.user === den.user && s.start > denialTime)
+                                    .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+                                  if (nextCheckout) {
+                                    const waitMin = (nextCheckout.start.getTime() - denialTime.getTime()) / 60000;
+                                    // Filter out next-day returns (>4 hours = probably gave up and came back later)
+                                    if (waitMin > 0 && waitMin <= 240) waitTimesMin.push(waitMin);
+                                  }
+                                });
+                                
+                                // Use measured wait time if we have enough data, otherwise estimate conservatively
+                                const measuredWaits = waitTimesMin.length;
+                                const avgWaitMin = measuredWaits >= 3
+                                  ? waitTimesMin.reduce((a, b) => a + b, 0) / measuredWaits
+                                  : 45; // conservative fallback
+                                const medianWaitMin = measuredWaits >= 3
+                                  ? waitTimesMin.sort((a, b) => a - b)[Math.floor(measuredWaits / 2)]
+                                  : avgWaitMin;
+                                // Use median (more robust to outliers) + context-switch overhead
+                                const effectiveWaitMin = medianWaitMin + 10; // +10 min for context-switching overhead
+                                
+                                const ENG_HOURLY = 40;
                                 const annualizedDenials = logDays > 0 ? Math.round(denials * (365 / logDays)) : denials;
-                                const annualDenialCost = annualizedDenials * avgWaitHrs * ENG_HOURLY;
+                                const annualHoursLost = annualizedDenials * (effectiveWaitMin / 60);
+                                const annualDenialCost = Math.round(annualHoursLost * ENG_HOURLY);
                                 const seatsNeeded = hasSeats ? Math.max(1, featurePeak - totalSeats + 1) : Math.max(1, Math.ceil(denialRate / 10));
                                 const seatInvestment = seatsNeeded * cost;
                                 const roiPositive = cost > 0 && annualDenialCost > seatInvestment;
@@ -2014,32 +2042,34 @@ export function App() {
                                   <p className={`${roiPositive ? 'text-red-400' : 'text-orange-400'} text-xs font-semibold mb-1`}>⚠ Engineer downtime from denials</p>
                                   <p className="text-slate-400 text-[11px]">
                                     <span className="font-mono-brand text-white">{denials}</span> denials over {logDays} days → <span className="font-mono-brand text-white">~{annualizedDenials.toLocaleString()}</span> projected/yr.
-                                    At ~{Math.round(avgWaitHrs * 60)} min lost per denial (waiting, retrying, context-switching), that's roughly <span className={`${roiPositive ? 'text-red-400' : 'text-orange-400'} font-mono-brand font-semibold`}>
-                                    {Math.round(annualizedDenials * avgWaitHrs)} hours</span> of engineer time — <span className={`${roiPositive ? 'text-red-400' : 'text-orange-400'} font-mono-brand font-semibold`}>${annualDenialCost.toLocaleString()}/yr</span> in productivity impact.
+                                    {measuredWaits >= 3
+                                      ? <> Median wait before retry: <span className="font-mono-brand text-white">{Math.round(medianWaitMin)} min</span> (measured from {measuredWaits} denial→checkout pairs).</>
+                                      : <> Estimated ~{Math.round(effectiveWaitMin)} min lost per denial (waiting, retrying, context-switching).</>
+                                    }
                                   </p>
                                   {hasSeats && cost > 0 && (
                                     <div className="mt-3 pt-2 border-t border-slate-700/50">
-                                      <div className="flex items-center gap-3 text-[11px]">
+                                      <div className="flex flex-wrap items-center gap-3 text-[11px]">
                                         <div>
-                                          <p className="text-slate-500 text-[10px]">Seats needed</p>
+                                          <p className="text-slate-500 text-[10px]">Seats to add</p>
                                           <p className="text-white font-mono-brand">+{seatsNeeded} → {totalSeats + seatsNeeded}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 text-[10px]">Investment</p>
-                                          <p className="text-white font-mono-brand">${seatInvestment.toLocaleString()}/yr</p>
+                                          <p className="text-slate-500 text-[10px]">Annual investment</p>
+                                          <p className="text-white font-mono-brand">${seatInvestment.toLocaleString()}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 text-[10px]">Lost productivity</p>
+                                          <p className="text-slate-500 text-[10px]">Estimated productivity loss</p>
                                           <p className="text-red-400 font-mono-brand">${annualDenialCost.toLocaleString()}/yr</p>
                                         </div>
                                       </div>
                                       {roiPositive ? (
                                         <p className="text-red-300 text-xs mt-2 font-semibold">
-                                          Adding {seatsNeeded} seat{seatsNeeded > 1 ? 's' : ''} pays for itself <span className="font-mono-brand">{roiRatio.toFixed(1)}×</span> over in recovered productivity. Net savings: <span className="font-mono-brand">${(annualDenialCost - seatInvestment).toLocaleString()}/yr</span>.
+                                          Adding {seatsNeeded} seat{seatsNeeded > 1 ? 's' : ''} pays for itself <span className="font-mono-brand">{roiRatio.toFixed(1)}×</span> over. Net recovery: <span className="font-mono-brand">${(annualDenialCost - seatInvestment).toLocaleString()}/yr</span>.
                                         </p>
                                       ) : (
                                         <p className="text-orange-300 text-xs mt-2 font-semibold">
-                                          Seat cost (${seatInvestment.toLocaleString()}/yr) exceeds denial impact (${annualDenialCost.toLocaleString()}/yr). Consider workflow changes or options file rules to reduce contention instead.
+                                          Seat cost exceeds estimated denial impact. Consider options file rules (idle timeouts, reservations) to reduce contention before adding seats.
                                         </p>
                                       )}
                                     </div>
