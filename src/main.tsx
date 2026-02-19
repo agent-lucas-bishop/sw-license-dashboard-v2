@@ -66,7 +66,7 @@ interface DashboardData {
   entries: LogEntry[];
   sessions: Session[];
   denials: LogEntry[];
-  usageByFeature: Record<string, number>;
+  usageByFeature: Record<string, { checkouts: number, denials: number, totalDuration: number }>;
   userStats: Record<string, { sessions: number, totalDuration: number, denials: number }>;
   featureStats: Record<string, { checkouts: number, denials: number, totalDuration: number }>;
   timeSeriesUsage: { time: string, count: number }[];
@@ -88,6 +88,117 @@ const formatDuration = (mins: number) => {
   const hrs = Math.floor(mins / 60);
   const m = Math.round(mins % 60);
   return `${hrs}h ${m}m`;
+};
+
+// Reusable analytics computation — used by both initial parse and filtered views
+const computeAnalytics = (sessions: Session[], denials: LogEntry[]) => {
+  const userStats: Record<string, { sessions: number, totalDuration: number, denials: number }> = {};
+  const featureStats: Record<string, { checkouts: number, denials: number, totalDuration: number }> = {};
+  const timeSeries: Record<string, number> = {};
+  const denialsByDayMap: Record<string, number> = {};
+
+  sessions.forEach(s => {
+    if (!userStats[s.user]) userStats[s.user] = { sessions: 0, totalDuration: 0, denials: 0 };
+    userStats[s.user].sessions++;
+    userStats[s.user].totalDuration += s.duration || 0;
+
+    if (!featureStats[s.feature]) featureStats[s.feature] = { checkouts: 0, denials: 0, totalDuration: 0 };
+    featureStats[s.feature].checkouts++;
+    featureStats[s.feature].totalDuration += s.duration || 0;
+
+    const timeKey = s.start.toISOString().split('T')[0];
+    timeSeries[timeKey] = (timeSeries[timeKey] || 0) + 1;
+  });
+
+  denials.forEach(d => {
+    if (d.user && !userStats[d.user]) userStats[d.user] = { sessions: 0, totalDuration: 0, denials: 0 };
+    if (d.user) userStats[d.user].denials++;
+    if (d.feature && !featureStats[d.feature]) featureStats[d.feature] = { checkouts: 0, denials: 0, totalDuration: 0 };
+    if (d.feature) featureStats[d.feature].denials++;
+    const dateKey = d.date || 'Unknown';
+    denialsByDayMap[dateKey] = (denialsByDayMap[dateKey] || 0) + 1;
+  });
+
+  // Peak Hours
+  const hourCounts: Record<number, number> = {};
+  sessions.forEach(s => { const h = s.start.getHours(); hourCounts[h] = (hourCounts[h] || 0) + 1; });
+  const peakHours = Array.from({ length: 24 }, (_, i) => ({ hour: i, count: hourCounts[i] || 0 }));
+
+  // Concurrent Usage
+  const concurrentMap: Record<string, number> = {};
+  const validSessions = sessions.filter(s => s.end && !isNaN(s.start.getTime()) && !isNaN(s.end.getTime()));
+  if (validSessions.length > 0) {
+    const events: { time: number, delta: number }[] = [];
+    validSessions.forEach(s => {
+      events.push({ time: s.start.getTime(), delta: 1 });
+      events.push({ time: s.end!.getTime(), delta: -1 });
+    });
+    events.sort((a, b) => a.time - b.time);
+    let concurrent = 0;
+    events.forEach(e => {
+      concurrent += e.delta;
+      const day = new Date(e.time).toISOString().split('T')[0];
+      concurrentMap[day] = Math.max(concurrentMap[day] || 0, concurrent);
+    });
+  }
+  const concurrentUsage = Object.entries(concurrentMap).map(([time, concurrent]) => ({ time, concurrent })).sort((a, b) => a.time.localeCompare(b.time));
+
+  // Duration Distribution
+  const durationBuckets: Record<string, number> = { '<15m': 0, '15m-1h': 0, '1-2h': 0, '2-4h': 0, '4-8h': 0, '8h+': 0 };
+  sessions.forEach(s => {
+    const d = s.duration || 0;
+    if (d < 15) durationBuckets['<15m']++;
+    else if (d < 60) durationBuckets['15m-1h']++;
+    else if (d < 120) durationBuckets['1-2h']++;
+    else if (d < 240) durationBuckets['2-4h']++;
+    else if (d < 480) durationBuckets['4-8h']++;
+    else durationBuckets['8h+']++;
+  });
+  const durationDistribution = Object.entries(durationBuckets).map(([bucket, count]) => ({ bucket, count }));
+
+  // Host Stats
+  const hostStats: Record<string, { sessions: number, totalDuration: number, users: Set<string> }> = {};
+  sessions.forEach(s => {
+    if (!hostStats[s.host]) hostStats[s.host] = { sessions: 0, totalDuration: 0, users: new Set() };
+    hostStats[s.host].sessions++;
+    hostStats[s.host].totalDuration += s.duration || 0;
+    hostStats[s.host].users.add(s.user);
+  });
+
+  // Feature Co-usage
+  const userFeatures: Record<string, Set<string>> = {};
+  sessions.forEach(s => {
+    if (!userFeatures[s.user]) userFeatures[s.user] = new Set();
+    userFeatures[s.user].add(s.feature);
+  });
+  const pairCounts: Record<string, number> = {};
+  Object.values(userFeatures).forEach(features => {
+    const arr = Array.from(features).sort();
+    for (let i = 0; i < arr.length; i++)
+      for (let j = i + 1; j < arr.length; j++)
+        pairCounts[`${arr[i]} + ${arr[j]}`] = (pairCounts[`${arr[i]} + ${arr[j]}`] || 0) + 1;
+  });
+  const featureCoUsage = Object.entries(pairCounts).map(([pair, count]) => ({ pair, count })).sort((a, b) => b.count - a.count).slice(0, 10);
+
+  // Denial Ratio
+  const denialRatioByFeature = Object.entries(featureStats)
+    .filter(([_, s]) => s.checkouts > 0 || s.denials > 0)
+    .map(([name, s]) => ({ name, checkouts: s.checkouts, denials: s.denials, ratio: (s.checkouts + s.denials) > 0 ? Math.round((s.denials / (s.checkouts + s.denials)) * 100) : 0 }))
+    .sort((a, b) => b.ratio - a.ratio);
+
+  return {
+    usageByFeature: featureStats,
+    userStats,
+    featureStats,
+    timeSeriesUsage: Object.entries(timeSeries).map(([time, count]) => ({ time, count })).sort((a, b) => a.time.localeCompare(b.time)),
+    denialsByDay: Object.entries(denialsByDayMap).map(([time, count]) => ({ time, count })).sort((a, b) => a.time.localeCompare(b.time)),
+    peakHours,
+    concurrentUsage,
+    durationDistribution,
+    hostStats,
+    featureCoUsage,
+    denialRatioByFeature,
+  };
 };
 
 const parseLogFile = (content: string): DashboardData => {
@@ -210,146 +321,16 @@ const parseLogFile = (content: string): DashboardData => {
     entries.push(entry);
   });
 
-  // Aggregations
-  const userStats: Record<string, any> = {};
-  const featureStats: Record<string, any> = {};
-  const timeSeries: Record<string, number> = {};
-  const denialsByDay: Record<string, number> = {};
-
-  sessions.forEach(s => {
-    if (!userStats[s.user]) userStats[s.user] = { sessions: 0, totalDuration: 0, denials: 0 };
-    userStats[s.user].sessions++;
-    userStats[s.user].totalDuration += s.duration || 0;
-
-    if (!featureStats[s.feature]) featureStats[s.feature] = { checkouts: 0, denials: 0, totalDuration: 0 };
-    featureStats[s.feature].checkouts++;
-    featureStats[s.feature].totalDuration += s.duration || 0;
-
-    const timeKey = s.start.toISOString().split('T')[0];
-    timeSeries[timeKey] = (timeSeries[timeKey] || 0) + 1;
-  });
-
   const denials = entries.filter(e => e.type === 'DENIED');
-  denials.forEach(d => {
-    if (d.user && !userStats[d.user]) userStats[d.user] = { sessions: 0, totalDuration: 0, denials: 0 };
-    if (d.user) userStats[d.user].denials++;
-    
-    if (d.feature && !featureStats[d.feature]) featureStats[d.feature] = { checkouts: 0, denials: 0, totalDuration: 0 };
-    if (d.feature) featureStats[d.feature].denials++;
-
-    const dateKey = d.date || 'Unknown';
-    denialsByDay[dateKey] = (denialsByDay[dateKey] || 0) + 1;
-  });
-
-  // --- New Analytics ---
-
-  // 1. Peak Hours (which hours of day have most checkouts)
-  const hourCounts: Record<number, number> = {};
-  sessions.forEach(s => {
-    const h = s.start.getHours();
-    hourCounts[h] = (hourCounts[h] || 0) + 1;
-  });
-  const peakHours = Array.from({ length: 24 }, (_, i) => ({ hour: i, count: hourCounts[i] || 0 }));
-
-  // 2. Concurrent License Usage (sample every hour across all days)
-  const concurrentMap: Record<string, number> = {};
-  if (sessions.length > 0) {
-    const validSessions = sessions.filter(s => s.end && !isNaN(s.start.getTime()) && !isNaN(s.end.getTime()));
-    // Build event list
-    const events: { time: number, delta: number }[] = [];
-    validSessions.forEach(s => {
-      events.push({ time: s.start.getTime(), delta: 1 });
-      events.push({ time: s.end!.getTime(), delta: -1 });
-    });
-    events.sort((a, b) => a.time - b.time);
-    
-    // Sample at each date boundary to get max concurrent per day
-    const dailyMax: Record<string, number> = {};
-    let concurrent = 0;
-    events.forEach(e => {
-      concurrent += e.delta;
-      const day = new Date(e.time).toISOString().split('T')[0];
-      dailyMax[day] = Math.max(dailyMax[day] || 0, concurrent);
-    });
-    Object.assign(concurrentMap, dailyMax);
-  }
-  const concurrentUsage = Object.entries(concurrentMap)
-    .map(([time, concurrent]) => ({ time, concurrent }))
-    .sort((a, b) => a.time.localeCompare(b.time));
-
-  // 3. Session Duration Distribution
-  const durationBuckets: Record<string, number> = {
-    '<15m': 0, '15m-1h': 0, '1-2h': 0, '2-4h': 0, '4-8h': 0, '8h+': 0
-  };
-  sessions.forEach(s => {
-    const d = s.duration || 0;
-    if (d < 15) durationBuckets['<15m']++;
-    else if (d < 60) durationBuckets['15m-1h']++;
-    else if (d < 120) durationBuckets['1-2h']++;
-    else if (d < 240) durationBuckets['2-4h']++;
-    else if (d < 480) durationBuckets['4-8h']++;
-    else durationBuckets['8h+']++;
-  });
-  const durationDistribution = Object.entries(durationBuckets).map(([bucket, count]) => ({ bucket, count }));
-
-  // 4. Host/Machine Stats
-  const hostStats: Record<string, { sessions: number, totalDuration: number, users: Set<string> }> = {};
-  sessions.forEach(s => {
-    if (!hostStats[s.host]) hostStats[s.host] = { sessions: 0, totalDuration: 0, users: new Set() };
-    hostStats[s.host].sessions++;
-    hostStats[s.host].totalDuration += s.duration || 0;
-    hostStats[s.host].users.add(s.user);
-  });
-
-  // 5. Feature Co-usage (features used by same user in overlapping time)
-  const userFeatures: Record<string, Set<string>> = {};
-  sessions.forEach(s => {
-    if (!userFeatures[s.user]) userFeatures[s.user] = new Set();
-    userFeatures[s.user].add(s.feature);
-  });
-  const pairCounts: Record<string, number> = {};
-  Object.values(userFeatures).forEach(features => {
-    const arr = Array.from(features).sort();
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        const pair = `${arr[i]} + ${arr[j]}`;
-        pairCounts[pair] = (pairCounts[pair] || 0) + 1;
-      }
-    }
-  });
-  const featureCoUsage = Object.entries(pairCounts)
-    .map(([pair, count]) => ({ pair, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-
-  // 6. Denial-to-Checkout Ratio by Feature
-  const denialRatioByFeature = Object.entries(featureStats)
-    .filter(([_, s]) => s.checkouts > 0 || s.denials > 0)
-    .map(([name, s]) => ({
-      name,
-      checkouts: s.checkouts,
-      denials: s.denials,
-      ratio: (s.checkouts + s.denials) > 0 ? Math.round((s.denials / (s.checkouts + s.denials)) * 100) : 0
-    }))
-    .sort((a, b) => b.ratio - a.ratio);
+  const analytics = computeAnalytics(sessions, denials);
 
   return {
     metadata: { serverName, flexVersion, port, vendorPort, pid, logPath, startDate: currentDate },
     entries,
     sessions,
     denials,
-    usageByFeature: featureStats,
-    userStats,
-    featureStats,
-    timeSeriesUsage: Object.entries(timeSeries).map(([time, count]) => ({ time, count })).sort((a,b) => a.time.localeCompare(b.time)),
-    denialsByDay: Object.entries(denialsByDay).map(([time, count]) => ({ time, count })).sort((a,b) => a.time.localeCompare(b.time)),
     errors: entries.filter(e => e.type === 'ERROR' || e.type === 'UNSUPPORTED'),
-    peakHours,
-    concurrentUsage,
-    durationDistribution,
-    hostStats,
-    featureCoUsage,
-    denialRatioByFeature
+    ...analytics
   };
 };
 
@@ -447,7 +428,50 @@ export function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [isParsing, setIsParsing] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [filterUser, setFilterUser] = useState<string>('');
+  const [filterFeature, setFilterFeature] = useState<string>('');
   const reportRef = useRef<HTMLDivElement>(null);
+
+  // All unique users and features for filter dropdowns
+  const allUsers = useMemo(() => {
+    if (!data) return [];
+    return Array.from(new Set(data.sessions.map(s => s.user))).sort();
+  }, [data]);
+
+  const allFeatures = useMemo(() => {
+    if (!data) return [];
+    return Array.from(new Set(data.sessions.map(s => s.feature))).sort();
+  }, [data]);
+
+  // Filtered data — recomputes all analytics when filters change
+  const filteredData = useMemo(() => {
+    if (!data) return null;
+    if (!filterUser && !filterFeature) return data;
+
+    const filteredSessions = data.sessions.filter(s => 
+      (!filterUser || s.user === filterUser) && 
+      (!filterFeature || s.feature === filterFeature)
+    );
+    const filteredDenials = data.denials.filter(d => 
+      (!filterUser || d.user === filterUser) && 
+      (!filterFeature || d.feature === filterFeature)
+    );
+    const filteredErrors = data.errors.filter(e =>
+      (!filterFeature || e.feature === filterFeature)
+    );
+    const analytics = computeAnalytics(filteredSessions, filteredDenials);
+
+    return {
+      ...data,
+      sessions: filteredSessions,
+      denials: filteredDenials,
+      errors: filteredErrors,
+      ...analytics,
+    };
+  }, [data, filterUser, filterFeature]);
+
+  // Use filteredData everywhere (aliased as 'd' for brevity in JSX)
+  const d = filteredData;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -735,29 +759,29 @@ export function App() {
   };
 
   const topFeaturesBySessions = useMemo(() => {
-    if (!data) return [];
-    return (Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][])
+    if (!d) return [];
+    return (Object.entries(d.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][])
       .map(([name, stats]) => ({ name, value: stats.checkouts }))
       .sort((a,b) => b.value - a.value)
       .slice(0, 10);
-  }, [data]);
+  }, [d]);
 
   const topDeniedFeatures = useMemo(() => {
-    if (!data) return [];
-    return (Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][])
+    if (!d) return [];
+    return (Object.entries(d.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][])
       .map(([name, stats]) => ({ name, value: stats.denials }))
       .filter(f => f.value > 0)
       .sort((a,b) => b.value - a.value)
       .slice(0, 10);
-  }, [data]);
+  }, [d]);
 
   const topUsers = useMemo(() => {
-    if (!data) return [];
-    return (Object.entries(data.userStats) as [string, { sessions: number; totalDuration: number; denials: number }][])
+    if (!d) return [];
+    return (Object.entries(d.userStats) as [string, { sessions: number; totalDuration: number; denials: number }][])
       .map(([name, stats]) => ({ name, ...stats }))
       .sort((a,b) => b.sessions - a.sessions)
       .slice(0, 10);
-  }, [data]);
+  }, [d]);
 
   if (!data) {
     return (
@@ -976,17 +1000,53 @@ export function App() {
           </div>
         </header>
 
+        {/* Filter Bar */}
+        <div className="flex flex-wrap items-center gap-3 mb-6 pb-4 border-b border-slate-800/50">
+          <Filter size={14} className="text-slate-600" />
+          <select
+            value={filterUser}
+            onChange={e => setFilterUser(e.target.value)}
+            className="bg-[#111827] border border-slate-800 text-xs text-slate-300 px-3 py-1.5 focus:border-[#1871bd] focus:outline-none min-w-[160px]"
+          >
+            <option value="">All Users</option>
+            {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <select
+            value={filterFeature}
+            onChange={e => setFilterFeature(e.target.value)}
+            className="bg-[#111827] border border-slate-800 text-xs text-slate-300 px-3 py-1.5 focus:border-[#1871bd] focus:outline-none min-w-[200px]"
+          >
+            <option value="">All Features</option>
+            {allFeatures.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+          {(filterUser || filterFeature) && (
+            <button
+              onClick={() => { setFilterUser(''); setFilterFeature(''); }}
+              className="text-[11px] text-slate-500 hover:text-white px-2 py-1 border border-slate-800 hover:border-slate-600 transition-all flex items-center gap-1"
+            >
+              <X size={12} /> Clear filters
+            </button>
+          )}
+          {(filterUser || filterFeature) && d && (
+            <span className="text-[11px] text-slate-600 ml-auto">
+              Showing {d.sessions.length.toLocaleString()} sessions · {d.denials.length} denials
+              {filterUser && <> · user: <span className="text-[#46b6e3]">{filterUser}</span></>}
+              {filterFeature && <> · feature: <span className="text-[#46b6e3]">{filterFeature}</span></>}
+            </span>
+          )}
+        </div>
+
         <div id="capture-area" ref={reportRef} className="pb-20 space-y-8">
           {activeTab === 'overview' && (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-slate-800">
-                <StatCard title="Sessions" value={data.sessions.length.toLocaleString()} icon={Clock} color={COLORS.brandMid} />
-                <StatCard title="Users" value={Object.keys(data.userStats).length} icon={Users} color={COLORS.brandBlue} />
-                <StatCard title="Denials" value={data.denials.length} icon={ShieldAlert} color={COLORS.error} />
-                <StatCard title="Avg Duration" value={formatDuration(data.sessions.reduce((acc, s) => acc + (s.duration || 0), 0) / (data.sessions.length || 1))} icon={Activity} color={COLORS.success} />
+                <StatCard title="Sessions" value={d!.sessions.length.toLocaleString()} icon={Clock} color={COLORS.brandMid} />
+                <StatCard title="Users" value={Object.keys(d!.userStats).length} icon={Users} color={COLORS.brandBlue} />
+                <StatCard title="Denials" value={d!.denials.length} icon={ShieldAlert} color={COLORS.error} />
+                <StatCard title="Avg Duration" value={formatDuration(d!.sessions.reduce((acc, s) => acc + (s.duration || 0), 0) / (d!.sessions.length || 1))} icon={Activity} color={COLORS.success} />
               </div>
 
-              <ExecutiveSummary data={data} />
+              <ExecutiveSummary data={d!} />
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-slate-800">
                 <div className="bg-[#111827] p-6">
@@ -995,7 +1055,7 @@ export function App() {
                   </h3>
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={data.timeSeriesUsage}>
+                      <AreaChart data={d!.timeSeriesUsage}>
                         <defs>
                           <linearGradient id="colorUsage" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor={COLORS.brandMid} stopOpacity={0.3}/>
@@ -1042,7 +1102,7 @@ export function App() {
                   <p className="text-[11px] text-slate-500 mb-4">Maximum simultaneous checkouts per day</p>
                   <div className="h-56 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={data.concurrentUsage}>
+                      <AreaChart data={d!.concurrentUsage}>
                         <defs>
                           <linearGradient id="colorConcurrent" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
@@ -1064,7 +1124,7 @@ export function App() {
                   <p className="text-[11px] text-slate-500 mb-4">When are licenses being checked out?</p>
                   <div className="h-56 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data.peakHours}>
+                      <BarChart data={d!.peakHours}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
                         <XAxis dataKey="hour" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(h: number) => `${h}:00`} />
                         <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
@@ -1082,7 +1142,7 @@ export function App() {
                 <p className="text-[11px] text-slate-500 mb-4">How long are licenses typically held?</p>
                 <div className="h-48 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data.durationDistribution}>
+                    <BarChart data={d!.durationDistribution}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
                       <XAxis dataKey="bucket" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
                       <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
@@ -1114,7 +1174,7 @@ export function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {(Object.entries(data.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][]).map(([name, stats]) => (
+                      {(Object.entries(d!.featureStats) as [string, { checkouts: number; denials: number; totalDuration: number }][]).map(([name, stats]) => (
                         <tr key={name} className="hover:bg-[#1a2332] transition-colors">
                           <td className="px-5 py-3 font-bold text-sm">{name}</td>
                           <td className="px-5 py-3 text-sm">{stats.checkouts.toLocaleString()}</td>
@@ -1142,7 +1202,7 @@ export function App() {
                   <p className="text-[11px] text-slate-500 mb-4">Which features are most constrained?</p>
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart layout="vertical" data={data.denialRatioByFeature.filter(f => f.ratio > 0).slice(0, 10)}>
+                      <BarChart layout="vertical" data={d!.denialRatioByFeature.filter(f => f.ratio > 0).slice(0, 10)}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#1e293b" />
                         <XAxis type="number" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
                         <YAxis dataKey="name" type="category" stroke="#475569" fontSize={9} width={100} tickLine={false} axisLine={false} />
@@ -1157,18 +1217,18 @@ export function App() {
                   <h3 className="text-sm font-semibold mb-1 text-slate-300">Feature Co-usage</h3>
                   <p className="text-[11px] text-slate-500 mb-4">Features commonly used by the same users</p>
                   <div className="space-y-2">
-                    {data.featureCoUsage.slice(0, 8).map((item, i) => (
+                    {d!.featureCoUsage.slice(0, 8).map((item, i) => (
                       <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-800/50">
                         <span className="text-xs text-slate-300 font-medium truncate mr-4">{item.pair}</span>
                         <div className="flex items-center gap-2 shrink-0">
                           <div className="w-20 h-1.5 bg-slate-800 overflow-hidden">
-                            <div className="h-full bg-[#46b6e3]" style={{ width: `${Math.min(100, (item.count / (data.featureCoUsage[0]?.count || 1)) * 100)}%` }} />
+                            <div className="h-full bg-[#46b6e3]" style={{ width: `${Math.min(100, (item.count / (d!.featureCoUsage[0]?.count || 1)) * 100)}%` }} />
                           </div>
                           <span className="text-[11px] text-slate-500 font-mono-brand w-8 text-right">{item.count}</span>
                         </div>
                       </div>
                     ))}
-                    {data.featureCoUsage.length === 0 && <p className="text-xs text-slate-500">No co-usage patterns detected</p>}
+                    {d!.featureCoUsage.length === 0 && <p className="text-xs text-slate-500">No co-usage patterns detected</p>}
                   </div>
                 </div>
               </div>
@@ -1197,7 +1257,7 @@ export function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/50">
-                          {(Object.entries(data.userStats) as [string, { sessions: number; totalDuration: number; denials: number }][]).sort((a,b) => b[1].sessions - a[1].sessions).map(([name, stats]) => (
+                          {(Object.entries(d!.userStats) as [string, { sessions: number; totalDuration: number; denials: number }][]).sort((a,b) => b[1].sessions - a[1].sessions).map(([name, stats]) => (
                             <tr key={name} className="hover:bg-[#1a2332]">
                               <td className="px-5 py-3 text-sm font-black flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] text-slate-500">
@@ -1271,7 +1331,7 @@ export function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {Object.entries(data.hostStats)
+                      {Object.entries(d!.hostStats)
                         .sort((a, b) => b[1].sessions - a[1].sessions)
                         .slice(0, 20)
                         .map(([host, stats]) => (
@@ -1298,20 +1358,20 @@ export function App() {
                 <p className="text-[11px] text-slate-500 mb-4">Session patterns for top users (most recent 7 days)</p>
                 <div className="space-y-1.5 overflow-x-auto">
                   {(() => {
-                    const topUserNames = Object.entries(data.userStats)
+                    const topUserNames = Object.entries(d!.userStats)
                       .sort((a, b) => b[1].sessions - a[1].sessions)
                       .slice(0, 15)
                       .map(([name]) => name);
                     
                     // Find time range
-                    const allTimes = data.sessions.filter(s => s.end).map(s => [s.start.getTime(), s.end!.getTime()]).flat();
+                    const allTimes = d!.sessions.filter(s => s.end).map(s => [s.start.getTime(), s.end!.getTime()]).flat();
                     if (allTimes.length === 0) return <p className="text-xs text-slate-500">No session data available</p>;
                     const maxTime = Math.max(...allTimes);
                     const minTime = maxTime - 7 * 24 * 60 * 60 * 1000; // last 7 days
                     const range = maxTime - minTime;
 
                     return topUserNames.map(userName => {
-                      const userSessions = data.sessions.filter(s => s.user === userName && s.end && s.start.getTime() >= minTime);
+                      const userSessions = d!.sessions.filter(s => s.user === userName && s.end && s.start.getTime() >= minTime);
                       return (
                         <div key={userName} className="flex items-center gap-3">
                           <span className="text-[11px] text-slate-500 w-24 truncate shrink-0 font-mono-brand">{userName}</span>
@@ -1351,7 +1411,7 @@ export function App() {
                   </h3>
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data.denialsByDay}>
+                      <BarChart data={d!.denialsByDay}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#334155' : '#e2e8f0'} />
                         <XAxis dataKey="time" stroke={isDarkMode ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} />
                         <YAxis stroke={isDarkMode ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} />
@@ -1364,9 +1424,9 @@ export function App() {
                 <div className="bg-[#111827] p-10 border border-slate-800">
                   <h3 className="text-sm font-semibold mb-8">Most Common Denial Reasons</h3>
                   <div className="space-y-6">
-                    {Array.from(new Set(data.denials.map(d => d.reason))).slice(0, 5).map(reason => {
-                      const count = data.denials.filter(d => d.reason === reason).length;
-                      const percentage = Math.round((count / (data.denials.length || 1)) * 100);
+                    {Array.from(new Set(d!.denials.map(d => d.reason))).slice(0, 5).map(reason => {
+                      const count = d!.denials.filter(d => d.reason === reason).length;
+                      const percentage = Math.round((count / (d!.denials.length || 1)) * 100);
                       return (
                         <div key={reason} className="group">
                           <div className="flex justify-between items-center mb-2">
@@ -1401,7 +1461,7 @@ export function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {data.denials.slice(0, 50).map((d, i) => (
+                      {d!.denials.slice(0, 50).map((d, i) => (
                         <tr key={i} className="hover:bg-[#1a2332] transition-colors">
                           <td className="px-5 py-3 text-xs font-medium text-slate-400 font-mono">{d.time}</td>
                           <td className="px-5 py-3 text-sm font-bold">{d.user}</td>
@@ -1421,15 +1481,15 @@ export function App() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="bg-[#111827] p-10 border border-slate-800">
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Fatal Errors</p>
-                  <p className="text-3xl font-bold font-mono-brand text-red-500">{data.errors.filter(e => e.type === 'ERROR').length}</p>
+                  <p className="text-3xl font-bold font-mono-brand text-red-500">{d!.errors.filter(e => e.type === 'ERROR').length}</p>
                 </div>
                 <div className="bg-[#111827] p-10 border border-slate-800">
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Unsupported Features</p>
-                  <p className="text-3xl font-bold font-mono-brand text-amber-500">{data.errors.filter(e => e.type === 'UNSUPPORTED').length}</p>
+                  <p className="text-3xl font-bold font-mono-brand text-amber-500">{d!.errors.filter(e => e.type === 'UNSUPPORTED').length}</p>
                 </div>
                 <div className="bg-[#111827] p-10 border border-slate-800">
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-2">Analyzed Lines</p>
-                  <p className="text-3xl font-bold font-mono-brand text-blue-500">{data.entries.length.toLocaleString()}</p>
+                  <p className="text-3xl font-bold font-mono-brand text-blue-500">{d!.entries.length.toLocaleString()}</p>
                 </div>
               </div>
 
@@ -1439,14 +1499,14 @@ export function App() {
                   <div className="px-4 py-2 bg-slate-200 dark:bg-slate-700 rounded-xl text-[10px] font-black uppercase">Debug View</div>
                 </div>
                 <div className="p-4 max-h-[600px] overflow-y-auto font-mono text-[11px] bg-[#0c1220]">
-                  {data.errors.map((err, i) => (
+                  {d!.errors.map((err, i) => (
                     <div key={i} className="py-2.5 px-6 flex gap-6 hover:bg-[#1a2332] rounded-lg group transition-all">
                       <span className="text-slate-400 whitespace-nowrap">{err.time}</span>
                       <span className={`font-black ${err.type === 'ERROR' ? 'text-red-500' : 'text-amber-500'}`}>[{err.type}]</span>
                       <span className="text-slate-600 dark:text-slate-300 break-all">{err.raw}</span>
                     </div>
                   ))}
-                  {data.errors.length === 0 && (
+                  {d!.errors.length === 0 && (
                     <div className="py-20 text-center text-slate-400 font-sans">
                       <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
                         <CheckCircle size={32} className="text-green-500" />
@@ -1509,9 +1569,9 @@ export function App() {
                     <h4 className="text-lg font-bold text-white mb-2 tracking-tight">Optimization Recommendation</h4>
                     <p className="text-blue-100/70 max-w-2xl leading-relaxed font-medium">
                       {(() => {
-                        const dr = data ? ((data.denials.length / ((data.sessions.length + data.denials.length) || 1)) * 100) : 0;
-                        const longSessions = data ? data.sessions.filter(s => (s.duration || 0) > 480).length : 0;
-                        const longPct = data ? Math.round((longSessions / (data.sessions.length || 1)) * 100) : 0;
+                        const dr = data ? ((d!.denials.length / ((d!.sessions.length + d!.denials.length) || 1)) * 100) : 0;
+                        const longSessions = data ? d!.sessions.filter(s => (s.duration || 0) > 480).length : 0;
+                        const longPct = data ? Math.round((longSessions / (d!.sessions.length || 1)) * 100) : 0;
                         if (dr > 10) return <>Your denial rate is <strong>{dr.toFixed(1)}%</strong> — consider adding seats for your most-denied features to reduce engineer downtime.</>;
                         if (dr > 5) return <>Denial rate of <strong>{dr.toFixed(1)}%</strong> detected. Review seat counts for frequently denied features and consider implementing timeout policies for idle sessions.</>;
                         if (longPct > 20) return <><strong>{longPct}%</strong> of sessions exceed 8 hours. Consider implementing idle timeout rules to free licenses for other users.</>;
