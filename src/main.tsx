@@ -1939,7 +1939,8 @@ export function App() {
                             {isOverUtilized && <span className="text-[10px] px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 font-semibold flex items-center gap-1"><TrendingUp size={10} /> Needs More Seats</span>}
                             {!isOverUtilized && isAtCapacity && <span className="text-[10px] px-2 py-0.5 bg-orange-500/20 text-orange-400 border border-orange-500/30 font-semibold flex items-center gap-1"><AlertTriangle size={10} /> At Capacity</span>}
                             {!isOverUtilized && !isAtCapacity && (isUnderUtilized || isOverProvisioned) && <span className="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold flex items-center gap-1"><TrendingDown size={10} /> Potential Savings</span>}
-                            {!isOverUtilized && !isAtCapacity && !isUnderUtilized && !isOverProvisioned && <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Right-Sized</span>}
+                            {!isOverUtilized && !isAtCapacity && !isUnderUtilized && !isOverProvisioned && hasSeats && <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Right-Sized</span>}
+                            {!isOverUtilized && !isAtCapacity && !isUnderUtilized && !isOverProvisioned && !hasSeats && <span className="text-[10px] px-2 py-0.5 bg-slate-500/10 text-slate-400 border border-slate-500/20">Needs Seat Count</span>}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-[11px]">
                             {hasSeats && (
@@ -1990,7 +1991,7 @@ export function App() {
                           )}
 
                           {/* Cost impact — over-utilization gets more visual weight */}
-                          {(cost > 0 || isUnderUtilized || isOverProvisioned || isAtCapacity) && (
+                          {(cost > 0 || isOverUtilized || isUnderUtilized || isOverProvisioned || isAtCapacity || !hasSeats) && (
                             <div className={`mt-3 pt-3 border-t ${isOverUtilized ? 'border-red-500/30' : isAtCapacity ? 'border-orange-500/30' : (isUnderUtilized || isOverProvisioned) ? 'border-amber-500/30' : 'border-slate-800/50'}`}>
                               {isAtCapacity && !isOverUtilized && (
                                 <div className="bg-orange-500/10 border border-orange-500/20 p-3 mb-2">
@@ -2094,8 +2095,16 @@ export function App() {
                                   <p className="text-slate-500 text-[10px] mt-2">Always keep 1-2 seats above peak before reducing. Monitor for seasonal spikes.</p>
                                 </div>
                               )}
-                              {!isOverUtilized && !isUnderUtilized && !isOverProvisioned && cost > 0 && (
-                                <p className="text-emerald-400/70 text-[11px]">✓ Current seat count appears well-matched to demand.</p>
+                              {!isOverUtilized && !isUnderUtilized && !isOverProvisioned && !isAtCapacity && hasSeats && (
+                                <p className="text-emerald-400/70 text-[11px]">✓ Current seat count appears well-matched to demand.{!cost && ' Enter cost per seat above for dollar-value analysis.'}</p>
+                              )}
+                              {!isOverUtilized && !isAtCapacity && !isUnderUtilized && !hasSeats && (
+                                <div className="bg-slate-800/30 border border-slate-700/30 p-3">
+                                  <p className="text-slate-400 text-[11px]">
+                                    Peak concurrent: <span className="font-mono-brand text-white">{featurePeak}</span> · Typical: <span className="font-mono-brand text-white">{p90}</span> · Denials: <span className={`font-mono-brand ${denials > 0 ? 'text-red-400' : 'text-white'}`}>{denials}</span>
+                                  </p>
+                                  <p className="text-slate-500 text-[10px] mt-1">Enter seat count{!cost ? ' and cost per seat' : ''} above for right-sizing recommendations.</p>
+                                </div>
                               )}
                             </div>
                           )}
