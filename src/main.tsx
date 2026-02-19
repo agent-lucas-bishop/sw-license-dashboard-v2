@@ -9,7 +9,7 @@ import {
 import { 
   FileText, Upload, Users, ShieldAlert, Clock, Activity, Download, 
   Moon, Sun, LayoutDashboard, Database, AlertTriangle, CheckCircle, Search, Filter,
-  ChevronRight, Printer, FileDown, Info, Server, Cpu, Menu, X
+  ChevronRight, Printer, FileDown, Info, Server, Cpu, Menu, X, Settings, Copy, Plus, Trash2
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -28,6 +28,59 @@ const COLORS = {
   warning: '#f59e0b',
   error: '#ef4444',
   chart: ['#1871bd', '#46b6e3', '#3981cc', '#7eaae9', '#1e2943', '#10b981', '#f59e0b', '#ef4444']
+};
+
+// --- SNL Feature Name Reference (from Dassault S-068783) ---
+const SNL_FEATURES: Record<string, string> = {
+  solidworks: 'SOLIDWORKS Standard',
+  swoffice: 'SOLIDWORKS Office (Legacy)',
+  swofficepro: 'SOLIDWORKS Professional',
+  swofficepremium: 'SOLIDWORKS Premium',
+  swofficepremium_cwadvpro: 'SOLIDWORKS Premium w/ Simulation Premium',
+  swofficepremium_cwpro: 'SOLIDWORKS Premium w/ Simulation Professional',
+  catiatoswtrans: 'CATIA V5-SW Translator (Legacy)',
+  edrw: 'eDrawings Professional',
+  cae_cwstd: 'Simulation Standard',
+  cae_cwpro: 'Simulation Professional',
+  cae_cwadvpro: 'Simulation Premium',
+  cae_cosmosfloworkspe: 'Flow Simulation',
+  cae_cosmosfloworks_hvac: 'Flow Simulation HVAC',
+  cae_cosmosfloworks_elec: 'Flow Simulation Electronic Cooling',
+  swsustainability: 'Sustainability',
+  plastics_pro: 'Plastics Standard',
+  plastics_premium: 'Plastics Professional',
+  plastics_advanced: 'Plastics Premium',
+  cae_cosmosmotion: 'Motion',
+  swepdm_cadeditorandweb: 'PDM Professional CAD Editor & Web',
+  swepdm_contributorandweb: 'PDM Professional Contributor & Web',
+  swepdm_processor: 'PDM Professional Processor',
+  swepdm_viewer: 'PDM Professional Viewer',
+  swpdmstd_cadeditor: 'PDM Standard CAD Editor',
+  swpdmstd_contributor: 'PDM Standard Contributor',
+  swpdmstd_viewer: 'PDM Standard Viewer',
+  swmanagepro_contributor: 'Manage Professional Contributor',
+  swmanagepro_editor: 'Manage Professional Editor',
+  swmanagepro_processor: 'Manage Professional Processor',
+  swmanagepro_viewer: 'Manage Professional Viewer',
+  elec2d: 'Electrical Schematic Professional',
+  elec3d: 'Electrical 3D',
+  elecpro: 'Electrical Professional',
+  pcbpro: 'PCB',
+  pcbaltium: 'PCB Connector for Altium',
+  swcomposer: 'Composer',
+  swcomposer_check: 'Composer Check',
+  swcomposer_playerpro: 'Composer Player Pro',
+  swcomposer_sync: 'Composer Sync',
+  swcomposer_syncenterprise: 'Composer Enterprise Sync',
+  swinspection_pro: 'Inspection Professional',
+  swinspection_std: 'Inspection Standard',
+  swmbd_std: 'MBD Standard',
+  visustd: 'Visualize Standard',
+  visupro: 'Visualize Professional',
+  visuboost: 'Visualize Boost',
+  draftsightpremium: 'DraftSight Enterprise',
+  camstd: 'CAM Standard',
+  campro: 'CAM Professional',
 };
 
 // --- Types ---
@@ -430,6 +483,12 @@ export function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [filterUsers, setFilterUsers] = useState<string[]>([]);
   const [filterFeatures, setFilterFeatures] = useState<string[]>([]);
+  
+  // Options file builder state
+  const [optTimeout, setOptTimeout] = useState(3600);
+  const [optGroups, setOptGroups] = useState<{ name: string, users: string[] }[]>([]);
+  const [optRules, setOptRules] = useState<{ type: 'MAX' | 'RESERVE' | 'INCLUDE' | 'EXCLUDE', count: number, feature: string, groupOrUser: string, targetType: 'GROUP' | 'USER' }[]>([]);
+  const [optCopied, setOptCopied] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   // All unique users and features for filter dropdowns
@@ -876,7 +935,8 @@ export function App() {
               { id: 'users', icon: Users, label: 'User Insights' },
               { id: 'denials', icon: ShieldAlert, label: 'Denial Logs' },
               { id: 'errors', icon: AlertTriangle, label: 'System Errors' },
-              { id: 'reports', icon: FileDown, label: 'Exports' }
+              { id: 'reports', icon: FileDown, label: 'Exports' },
+            { id: 'options', icon: Settings, label: 'Options File' }
             ].map((item) => (
               <button
                 key={item.id}
@@ -913,7 +973,8 @@ export function App() {
             { id: 'users', icon: Users, label: 'Users' },
             { id: 'denials', icon: ShieldAlert, label: 'Denials' },
             { id: 'errors', icon: AlertTriangle, label: 'Errors' },
-            { id: 'reports', icon: FileDown, label: 'Exports' }
+            { id: 'reports', icon: FileDown, label: 'Exports' },
+            { id: 'options', icon: Settings, label: 'Options File' }
           ].map((item) => (
             <button
               key={item.id}
@@ -979,6 +1040,7 @@ export function App() {
               {activeTab === 'denials' && 'Denial Intelligence'}
               {activeTab === 'errors' && 'System Events'}
               {activeTab === 'reports' && 'Reports & Exports'}
+              {activeTab === 'options' && 'Options File Builder'}
             </h1>
             <p className="text-xs text-slate-500 font-mono-brand">
               {data.metadata.serverName} · {data.metadata.startDate || 'unknown date'} · {data.entries.length.toLocaleString()} lines parsed
@@ -1602,6 +1664,259 @@ export function App() {
               </div>
             </div>
           )}
+
+          {activeTab === 'options' && d && (() => {
+            // Generate options file text
+            const generateOptionsFile = () => {
+              const lines: string[] = [];
+              lines.push('# SolidNetWork License Options File (sw_d.opt)');
+              lines.push(`# Generated by SNL License Parser · ${new Date().toLocaleDateString()}`);
+              lines.push(`# Server: ${data.metadata.serverName}`);
+              lines.push('');
+              lines.push(`# Idle timeout (seconds) — licenses returned after this period of inactivity`);
+              lines.push(`TIMEOUTALL ${optTimeout}`);
+              lines.push('');
+
+              if (optGroups.length > 0) {
+                lines.push('# --- User Groups ---');
+                optGroups.forEach(g => {
+                  if (g.users.length > 0) {
+                    lines.push(`GROUP ${g.name} ${g.users.join(' ')}`);
+                  }
+                });
+                lines.push('');
+              }
+
+              if (optRules.length > 0) {
+                lines.push('# --- License Rules ---');
+                optRules.forEach(r => {
+                  if (r.type === 'MAX' || r.type === 'RESERVE') {
+                    lines.push(`${r.type} ${r.count} ${r.feature} ${r.targetType} ${r.groupOrUser}`);
+                  } else {
+                    lines.push(`${r.type} ${r.feature} ${r.targetType} ${r.groupOrUser}`);
+                  }
+                });
+              }
+
+              return lines.join('\n');
+            };
+
+            const optionsText = generateOptionsFile();
+            const detectedFeatures = Object.keys(d.featureStats);
+            const detectedUsers = Array.from(new Set(d.sessions.map(s => s.user))).sort();
+            const avgSessionMins = d.sessions.length > 0 ? d.sessions.reduce((a, s) => a + (s.duration || 0), 0) / d.sessions.length : 0;
+            const longSessionPct = d.sessions.length > 0 ? Math.round((d.sessions.filter(s => (s.duration || 0) > 480).length / d.sessions.length) * 100) : 0;
+
+            return (
+              <div className="space-y-8">
+                {/* Data-driven suggestions */}
+                <div className="border border-slate-800 bg-[#111827] p-6">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2"><Info size={14} className="text-[#1871bd]" /> Suggestions from Your Log Data</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div className="p-3 bg-[#0c1220] border border-slate-800">
+                      <p className="text-slate-500 mb-1">Avg session: <span className="text-white font-mono-brand">{formatDuration(avgSessionMins)}</span></p>
+                      <p className="text-slate-500">Suggested timeout: <span className="text-[#46b6e3] font-mono-brand">{avgSessionMins < 60 ? '1800' : avgSessionMins < 240 ? '3600' : '7200'}s</span></p>
+                    </div>
+                    <div className="p-3 bg-[#0c1220] border border-slate-800">
+                      <p className="text-slate-500 mb-1">Long sessions (8h+): <span className={`font-mono-brand ${longSessionPct > 20 ? 'text-amber-400' : 'text-white'}`}>{longSessionPct}%</span></p>
+                      {longSessionPct > 20 && <p className="text-amber-400/70">Consider shorter timeout to free idle licenses</p>}
+                    </div>
+                    <div className="p-3 bg-[#0c1220] border border-slate-800">
+                      <p className="text-slate-500 mb-1">Most denied feature:</p>
+                      {(() => { const top = d.denialRatioByFeature[0]; return top ? <p className="text-red-400 font-mono-brand">{top.name} <span className="text-slate-500">({top.ratio}% denial rate)</span></p> : <p className="text-slate-500">None</p>; })()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left column: Configuration */}
+                  <div className="space-y-6">
+                    {/* Timeout */}
+                    <div className="border border-slate-800 bg-[#111827] p-5">
+                      <h3 className="text-sm font-semibold text-slate-300 mb-3">Idle Timeout</h3>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          value={optTimeout}
+                          onChange={e => setOptTimeout(Number(e.target.value))}
+                          min={900}
+                          step={300}
+                          className="bg-[#0c1220] border border-slate-800 text-white text-sm px-3 py-2 w-28 font-mono-brand focus:border-[#1871bd] focus:outline-none"
+                        />
+                        <span className="text-xs text-slate-500">seconds ({formatDuration(optTimeout / 60)})</span>
+                        <div className="flex gap-1 ml-auto">
+                          {[1800, 3600, 7200].map(v => (
+                            <button key={v} onClick={() => setOptTimeout(v)} className={`px-2 py-1 text-[10px] border ${optTimeout === v ? 'border-[#1871bd] text-[#1871bd]' : 'border-slate-800 text-slate-500 hover:text-white'}`}>
+                              {v / 60}m
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Groups */}
+                    <div className="border border-slate-800 bg-[#111827] p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-slate-300">User Groups</h3>
+                        <button
+                          onClick={() => setOptGroups([...optGroups, { name: `group${optGroups.length + 1}`, users: [] }])}
+                          className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1"
+                        >
+                          <Plus size={12} /> Add Group
+                        </button>
+                      </div>
+                      {optGroups.length === 0 && <p className="text-xs text-slate-500">No groups defined. Groups let you apply rules to sets of users.</p>}
+                      <div className="space-y-3">
+                        {optGroups.map((group, gi) => (
+                          <div key={gi} className="bg-[#0c1220] border border-slate-800 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <input
+                                type="text"
+                                value={group.name}
+                                onChange={e => { const g = [...optGroups]; g[gi].name = e.target.value.replace(/\s/g, '_'); setOptGroups(g); }}
+                                className="bg-transparent border-b border-slate-700 text-white text-xs font-mono-brand px-1 py-0.5 w-32 focus:border-[#1871bd] focus:outline-none"
+                              />
+                              <button onClick={() => setOptGroups(optGroups.filter((_, i) => i !== gi))} className="ml-auto text-slate-600 hover:text-red-400"><Trash2 size={12} /></button>
+                            </div>
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {group.users.map(u => (
+                                <span key={u} className="flex items-center gap-1 px-1.5 py-0.5 bg-[#1871bd]/10 border border-[#1871bd]/30 text-[#46b6e3] text-[10px]">
+                                  {u}
+                                  <button onClick={() => { const g = [...optGroups]; g[gi].users = g[gi].users.filter(x => x !== u); setOptGroups(g); }}><X size={8} /></button>
+                                </span>
+                              ))}
+                            </div>
+                            <select
+                              value=""
+                              onChange={e => { if (e.target.value) { const g = [...optGroups]; g[gi].users.push(e.target.value); setOptGroups(g); } }}
+                              className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1 w-full focus:border-[#1871bd] focus:outline-none"
+                            >
+                              <option value="">+ Add user from log...</option>
+                              {detectedUsers.filter(u => !group.users.includes(u)).map(u => (
+                                <option key={u} value={u}>{u} ({d.userStats[u]?.sessions || 0} sessions)</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Rules */}
+                    <div className="border border-slate-800 bg-[#111827] p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-slate-300">License Rules</h3>
+                        <button
+                          onClick={() => setOptRules([...optRules, { type: 'MAX', count: 1, feature: detectedFeatures[0] || 'solidworks', groupOrUser: optGroups[0]?.name || 'user1', targetType: 'GROUP' }])}
+                          className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1"
+                        >
+                          <Plus size={12} /> Add Rule
+                        </button>
+                      </div>
+                      {optRules.length === 0 && <p className="text-xs text-slate-500">No rules defined. Use MAX, RESERVE, INCLUDE, or EXCLUDE to control access.</p>}
+                      <div className="space-y-2">
+                        {optRules.map((rule, ri) => (
+                          <div key={ri} className="flex flex-wrap items-center gap-2 bg-[#0c1220] border border-slate-800 p-2">
+                            <select value={rule.type} onChange={e => { const r = [...optRules]; r[ri].type = e.target.value as any; setOptRules(r); }}
+                              className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 font-mono-brand focus:outline-none">
+                              <option value="MAX">MAX</option>
+                              <option value="RESERVE">RESERVE</option>
+                              <option value="INCLUDE">INCLUDE</option>
+                              <option value="EXCLUDE">EXCLUDE</option>
+                            </select>
+                            {(rule.type === 'MAX' || rule.type === 'RESERVE') && (
+                              <input type="number" value={rule.count} min={1} onChange={e => { const r = [...optRules]; r[ri].count = Number(e.target.value); setOptRules(r); }}
+                                className="bg-[#111827] border border-slate-800 text-white text-[11px] px-2 py-1 w-14 font-mono-brand focus:outline-none" />
+                            )}
+                            <select value={rule.feature} onChange={e => { const r = [...optRules]; r[ri].feature = e.target.value; setOptRules(r); }}
+                              className="bg-[#111827] border border-slate-800 text-[11px] text-[#46b6e3] px-2 py-1 font-mono-brand focus:outline-none flex-1 min-w-[120px]">
+                              {detectedFeatures.map(f => <option key={f} value={f}>{f} {SNL_FEATURES[f.toLowerCase()] ? `(${SNL_FEATURES[f.toLowerCase()]})` : ''}</option>)}
+                            </select>
+                            <select value={rule.targetType} onChange={e => { const r = [...optRules]; r[ri].targetType = e.target.value as any; setOptRules(r); }}
+                              className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1 focus:outline-none">
+                              <option value="GROUP">GROUP</option>
+                              <option value="USER">USER</option>
+                            </select>
+                            {rule.targetType === 'GROUP' ? (
+                              <select value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
+                                className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 focus:outline-none min-w-[100px]">
+                                {optGroups.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
+                                {optGroups.length === 0 && <option value="">No groups defined</option>}
+                              </select>
+                            ) : (
+                              <select value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
+                                className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 focus:outline-none min-w-[100px]">
+                                {detectedUsers.map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            )}
+                            <button onClick={() => setOptRules(optRules.filter((_, i) => i !== ri))} className="text-slate-600 hover:text-red-400"><Trash2 size={12} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right column: Preview + Feature Reference */}
+                  <div className="space-y-6">
+                    {/* Live Preview */}
+                    <div className="border border-slate-800 bg-[#111827]">
+                      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-[#0c1220]">
+                        <span className="text-xs text-slate-400 font-mono-brand">sw_d.opt</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(optionsText); setOptCopied(true); setTimeout(() => setOptCopied(false), 2000); }}
+                            className="text-[11px] text-slate-500 hover:text-white flex items-center gap-1"
+                          >
+                            <Copy size={12} /> {optCopied ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              const blob = new Blob([optionsText], { type: 'text/plain' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url; a.download = 'sw_d.opt'; a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1"
+                          >
+                            <Download size={12} /> Download
+                          </button>
+                        </div>
+                      </div>
+                      <pre className="p-4 text-xs font-mono-brand text-slate-300 overflow-x-auto whitespace-pre leading-relaxed max-h-[400px] overflow-y-auto">
+                        {optionsText}
+                      </pre>
+                    </div>
+
+                    {/* Detected Features from Log */}
+                    <div className="border border-slate-800 bg-[#111827] p-5">
+                      <h3 className="text-sm font-semibold text-slate-300 mb-3">Detected Features</h3>
+                      <div className="space-y-1">
+                        {detectedFeatures.map(f => (
+                          <div key={f} className="flex items-center justify-between text-xs py-1 border-b border-slate-800/30">
+                            <span className="font-mono-brand text-[#46b6e3]">{f}</span>
+                            <span className="text-slate-500">{SNL_FEATURES[f.toLowerCase()] || 'Unknown'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Quick reference */}
+                    <div className="border border-slate-800 bg-[#111827] p-5">
+                      <h3 className="text-sm font-semibold text-slate-300 mb-3">Command Reference</h3>
+                      <div className="space-y-2 text-[11px]">
+                        <div><span className="font-mono-brand text-amber-400">TIMEOUTALL</span> <span className="text-slate-500">— Idle time (seconds) before license is returned. Min 900 (15m).</span></div>
+                        <div><span className="font-mono-brand text-amber-400">GROUP</span> <span className="text-slate-500">— Define a named group of users.</span></div>
+                        <div><span className="font-mono-brand text-amber-400">MAX</span> <span className="text-slate-500">— Limit max licenses a group/user can hold.</span></div>
+                        <div><span className="font-mono-brand text-amber-400">RESERVE</span> <span className="text-slate-500">— Reserve licenses for a group/user (others can't access).</span></div>
+                        <div><span className="font-mono-brand text-amber-400">INCLUDE</span> <span className="text-slate-500">— Only allow specific group/user to use a feature.</span></div>
+                        <div><span className="font-mono-brand text-amber-400">EXCLUDE</span> <span className="text-slate-500">— Block specific group/user from a feature.</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </main>
 
