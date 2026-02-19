@@ -137,7 +137,7 @@ interface DashboardData {
 // --- Demo Log Generator ---
 const generateDemoLog = (): string => {
   const features = ['solidworks', 'swpremium', 'swsimulation', 'swepdm_cadeditorandweb', 'swepdm_viewer', 'swinspection_std'];
-  const featureSeats: Record<string, number> = { solidworks: 4, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 4, swepdm_viewer: 15, swinspection_std: 4 };
+  const featureSeats: Record<string, number> = { solidworks: 5, swpremium: 4, swsimulation: 2, swepdm_cadeditorandweb: 5, swepdm_viewer: 15, swinspection_std: 5 };
   const users = ['mthompson', 'jchen', 'agarcia', 'bwilson', 'kpatel', 'rjohnson', 'lnguyen', 'dsmith', 'cmartinez', 'ekim', 'twright', 'pbrown'];
   const hosts = ['ENG-WS01', 'ENG-WS02', 'ENG-WS03', 'DESIGN-PC1', 'DESIGN-PC2', 'LAB-WS01', 'MFG-PC01', 'MFG-PC02', 'REMOTE-01', 'REMOTE-02', 'QA-WS01', 'ADMIN-PC1'];
   const lines: string[] = [];
@@ -997,7 +997,7 @@ export function App() {
                 )}
               </label>
               <button
-                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 4, swpremium: 3, swsimulation: 2, swepdm_cadeditorandweb: 4, swepdm_viewer: 15, swinspection_std: 4 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
+                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setLicenseSeats({ solidworks: 5, swpremium: 4, swsimulation: 2, swepdm_cadeditorandweb: 5, swepdm_viewer: 15, swinspection_std: 5 }); setLicenseCosts({ solidworks: 1800, swpremium: 2400, swsimulation: 3600, swepdm_cadeditorandweb: 1200, swepdm_viewer: 450, swinspection_std: 1500 }); setIsParsing(false); }, 300); }}
                 className="mt-3 w-full py-2.5 border border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors"
               >
                 No log file handy? <span className="text-[#1871bd]">Try with sample data →</span>
@@ -1932,14 +1932,15 @@ export function App() {
                       const roiJustified = cost > 0 && annualDenialCostPre > seatInvestmentPre;
                       
                       // Utilization categories
-                      // Over-utilized: denials AND seat cost is justified by lost productivity (or no cost entered)
+                      // Has denials AND peak exceeds seats → needs more seats (if ROI justified or no cost entered)
                       const isOverUtilized = denialRate > 3 && (!hasSeats || featurePeak >= totalSeats) && (roiJustified || cost === 0);
-                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats && totalSeats > 0;
-                      // Over-provisioned: less than half seats used at peak
-                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && utilizationPct < 50 && unusedSeats > 2;
+                      // Peak hits seats but no meaningful denials → at capacity (watch closely)
+                      const isAtCapacity = !isOverUtilized && hasSeats && featurePeak >= totalSeats && totalSeats > 0 && denialRate <= 3;
+                      // Over-provisioned: more than 2 unused seats at peak
+                      const isOverProvisioned = !isOverUtilized && !isAtCapacity && hasSeats && unusedSeats > 2;
                       // Under-utilized pattern (no seat data): peak is way above typical usage
                       const isUnderUtilized = !isOverUtilized && !isAtCapacity && !isOverProvisioned && !hasSeats && featurePeak >= 3 && p90 <= Math.ceil(featurePeak * 0.4) && denialRate === 0;
-                      // Everything else with seats = right-sized
+                      // Everything else with seats = right-sized (includes denial cases where ROI doesn't justify adding seats)
                       const isRightSized = hasSeats && !isOverUtilized && !isAtCapacity && !isOverProvisioned;
                       
                       return (
@@ -2007,7 +2008,7 @@ export function App() {
                                 <div className="bg-orange-500/10 border border-orange-500/20 p-3 mb-2">
                                   <p className="text-orange-400 text-xs font-semibold mb-1">⚠ Running at full capacity</p>
                                   <p className="text-slate-400 text-[11px]">Peak concurrent usage hit all <span className="font-mono-brand text-white">{totalSeats}</span> seats. No denials yet, but one more user and they'll start getting blocked.</p>
-                                  {cost > 0 && <p className="text-orange-300 text-xs mt-2 font-semibold">Adding 1 seat ({`$${cost.toLocaleString()}/yr`}) would provide a safety buffer.</p>}
+                                  {cost > 0 && <p className="text-orange-300 text-xs mt-2 font-semibold">One more concurrent user will trigger denials.</p>}
                                 </div>
                               )}
                               {isOverUtilized && (() => {
