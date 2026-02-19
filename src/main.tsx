@@ -1999,25 +1999,55 @@ export function App() {
                                   {cost > 0 && <p className="text-orange-300 text-xs mt-2 font-semibold">Adding 1 seat ({`$${cost.toLocaleString()}/yr`}) would provide a safety buffer.</p>}
                                 </div>
                               )}
-                              {isOverUtilized && (
-                                <div className="bg-red-500/10 border border-red-500/20 p-3 mb-2">
-                                  <p className="text-red-400 text-xs font-semibold mb-1">⚠ Engineer downtime from denials</p>
+                              {isOverUtilized && (() => {
+                                // ROI-based analysis: denial cost impact vs seat cost
+                                const ENG_HOURLY = 40; // assumed flat engineering cost
+                                const avgWaitHrs = 0.75; // ~45 min avg wait per denial (waiting, retrying, context-switching)
+                                const annualizedDenials = logDays > 0 ? Math.round(denials * (365 / logDays)) : denials;
+                                const annualDenialCost = annualizedDenials * avgWaitHrs * ENG_HOURLY;
+                                const seatsNeeded = hasSeats ? Math.max(1, featurePeak - totalSeats + 1) : Math.max(1, Math.ceil(denialRate / 10));
+                                const seatInvestment = seatsNeeded * cost;
+                                const roiPositive = cost > 0 && annualDenialCost > seatInvestment;
+                                const roiRatio = seatInvestment > 0 ? annualDenialCost / seatInvestment : 0;
+                                
+                                return <div className={`${roiPositive ? 'bg-red-500/10 border-red-500/20' : 'bg-orange-500/10 border-orange-500/20'} border p-3 mb-2`}>
+                                  <p className={`${roiPositive ? 'text-red-400' : 'text-orange-400'} text-xs font-semibold mb-1`}>⚠ Engineer downtime from denials</p>
                                   <p className="text-slate-400 text-[11px]">
-                                    {denials} denied requests over {logDays} days. Assuming an average of {Math.round(15 + denialRate * 2)} minutes lost per denial 
-                                    (waiting, retrying, context-switching), that's roughly <span className="text-red-400 font-mono-brand font-semibold">
-                                    {Math.round(denials * (15 + denialRate * 2) / 60)} hours</span> of engineer time lost.
+                                    <span className="font-mono-brand text-white">{denials}</span> denials over {logDays} days → <span className="font-mono-brand text-white">~{annualizedDenials.toLocaleString()}</span> projected/yr.
+                                    At ~{Math.round(avgWaitHrs * 60)} min lost per denial (waiting, retrying, context-switching), that's roughly <span className={`${roiPositive ? 'text-red-400' : 'text-orange-400'} font-mono-brand font-semibold`}>
+                                    {Math.round(annualizedDenials * avgWaitHrs)} hours</span> of engineer time — <span className={`${roiPositive ? 'text-red-400' : 'text-orange-400'} font-mono-brand font-semibold`}>${annualDenialCost.toLocaleString()}/yr</span> in productivity impact.
                                   </p>
-                                  {hasSeats && cost > 0 && (() => {
-                                    // Recommend enough seats to cover peak concurrent that caused denials
-                                    const seatsNeeded = Math.max(1, featurePeak - totalSeats + 1);
-                                    return <p className="text-red-300 text-xs mt-2 font-semibold">
-                                      Adding {seatsNeeded} seat{seatsNeeded > 1 ? 's' : ''} (to {totalSeats + seatsNeeded} total) would cost ~${(seatsNeeded * cost).toLocaleString()}/yr but could recover significant productivity.
-                                    </p>;
-                                  })()}
-                                  {hasSeats && !cost && <p className="text-red-300/70 text-[11px] mt-1">Enter cost per seat above to calculate the investment needed.</p>}
+                                  {hasSeats && cost > 0 && (
+                                    <div className="mt-3 pt-2 border-t border-slate-700/50">
+                                      <div className="flex items-center gap-3 text-[11px]">
+                                        <div>
+                                          <p className="text-slate-500 text-[10px]">Seats needed</p>
+                                          <p className="text-white font-mono-brand">+{seatsNeeded} → {totalSeats + seatsNeeded}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 text-[10px]">Investment</p>
+                                          <p className="text-white font-mono-brand">${seatInvestment.toLocaleString()}/yr</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 text-[10px]">Lost productivity</p>
+                                          <p className="text-red-400 font-mono-brand">${annualDenialCost.toLocaleString()}/yr</p>
+                                        </div>
+                                      </div>
+                                      {roiPositive ? (
+                                        <p className="text-red-300 text-xs mt-2 font-semibold">
+                                          Adding {seatsNeeded} seat{seatsNeeded > 1 ? 's' : ''} pays for itself <span className="font-mono-brand">{roiRatio.toFixed(1)}×</span> over in recovered productivity. Net savings: <span className="font-mono-brand">${(annualDenialCost - seatInvestment).toLocaleString()}/yr</span>.
+                                        </p>
+                                      ) : (
+                                        <p className="text-orange-300 text-xs mt-2 font-semibold">
+                                          Seat cost (${seatInvestment.toLocaleString()}/yr) exceeds denial impact (${annualDenialCost.toLocaleString()}/yr). Consider workflow changes or options file rules to reduce contention instead.
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {hasSeats && !cost && <p className="text-red-300/70 text-[11px] mt-1">Enter cost per seat above to see the ROI analysis.</p>}
                                   {!hasSeats && <p className="text-red-300/70 text-[11px] mt-1">Enter your seat count above for specific recommendations.</p>}
-                                </div>
-                              )}
+                                </div>;
+                              })()}
                               {(isUnderUtilized || isOverProvisioned) && (
                                 <div className="bg-amber-500/10 border border-amber-500/20 p-3">
                                   <p className="text-amber-400 text-xs font-semibold mb-1">💰 Possible cost savings</p>
