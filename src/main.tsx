@@ -9,7 +9,7 @@ import {
 import { 
   FileText, Upload, Users, ShieldAlert, Clock, Activity, Download, 
   Moon, Sun, LayoutDashboard, Database, AlertTriangle, CheckCircle, Search, Filter,
-  ChevronRight, Printer, FileDown, Info, Server, Cpu, Menu, X, Settings, Copy, Plus, Trash2
+  ChevronRight, Printer, FileDown, Info, Server, Cpu, Menu, X, Settings, Copy, Plus, Trash2, HelpCircle, DollarSign, TrendingDown, TrendingUp
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
@@ -133,6 +133,102 @@ interface DashboardData {
   featureCoUsage: { pair: string, count: number }[];
   denialRatioByFeature: { name: string, checkouts: number, denials: number, ratio: number }[];
 }
+
+// --- Demo Log Generator ---
+const generateDemoLog = (): string => {
+  const features = ['solidworks', 'swpremium', 'swsimulation', 'swepdm_cadeditorandweb', 'swepdm_viewer', 'swinspection_std'];
+  const featureSeats: Record<string, number> = { solidworks: 8, swpremium: 4, swsimulation: 2, swepdm_cadeditorandweb: 6, swepdm_viewer: 10, swinspection_std: 2 };
+  const users = ['mthompson', 'jchen', 'agarcia', 'bwilson', 'kpatel', 'rjohnson', 'lnguyen', 'dsmith', 'cmartinez', 'ekim', 'twright', 'pbrown'];
+  const hosts = ['ENG-WS01', 'ENG-WS02', 'ENG-WS03', 'DESIGN-PC1', 'DESIGN-PC2', 'LAB-WS01', 'MFG-PC01', 'MFG-PC02', 'REMOTE-01', 'REMOTE-02', 'QA-WS01', 'ADMIN-PC1'];
+  const lines: string[] = [];
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 30);
+
+  const fmt = (d: Date) => `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}/${d.getFullYear()}`;
+  const fmtTime = (d: Date) => `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+
+  // Server startup
+  lines.push(`${fmtTime(startDate)} (lmgrd) -----------------------------------------------`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) Please Note:`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) FLEXnet Licensing (v11.18.2.0 build 232202) started on SNLSERVER01 (${fmt(startDate)})`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) Copyright (c) 1988-2024 Flexera Software LLC. All Rights Reserved.`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) US Patents 5,390,297 and 5,671,412.`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) World Wide Web: http://www.flexerasoftware.com`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) License file(s): C:\\Program Files (x86)\\SOLIDWORKS Corp\\SolidNetWork License Manager\\licenses\\sw_d.lic`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) lmgrd tcp-port 25734`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) Starting vendor daemons ...`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) Started SW_D (internet tcp_port 25735 pid 4521)`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) SW_D using TCP-port 25735`);
+  lines.push(`${fmtTime(startDate)} (SW_D) Server started on SNLSERVER01 for: ${features.join(' ')}`);
+  lines.push(`${fmtTime(startDate)} (SW_D) EXTERNAL FILTERS are OFF`);
+  lines.push(`${fmtTime(startDate)} (SW_D) SLOG: SNLSERVER01 is alive`);
+  lines.push(`${fmtTime(startDate)} (lmgrd) SNLSERVER01's Server nodeid is AABBCCDD1122`);
+
+  // Generate 30 days of activity
+  const rng = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+  const pick = <T,>(arr: T[]): T => arr[rng(0, arr.length - 1)];
+  const activeSessions: { user: string, host: string, feature: string, start: Date }[] = [];
+
+  for (let day = 0; day < 30; day++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + day);
+    lines.push(`${fmtTime(d)} (SW_D) TIMESTAMP ${fmt(d)}`);
+
+    // Weekdays get 15-30 events, weekends 2-5
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    const eventCount = isWeekend ? rng(2, 5) : rng(15, 30);
+
+    for (let ev = 0; ev < eventCount; ev++) {
+      const hour = isWeekend ? rng(9, 17) : rng(6, 20);
+      const min = rng(0, 59);
+      const sec = rng(0, 59);
+      const t = new Date(d); t.setHours(hour, min, sec);
+      const time = fmtTime(t);
+      const user = pick(users);
+      const host = pick(hosts);
+      const feature = pick(features);
+
+      // Check if we should check in an existing session
+      const existingIdx = activeSessions.findIndex(s => s.user === user && s.feature === feature);
+      if (existingIdx >= 0 && Math.random() < 0.6) {
+        const s = activeSessions[existingIdx];
+        lines.push(`${time} (SW_D) IN: "${s.feature}" ${s.user}@${s.host}`);
+        activeSessions.splice(existingIdx, 1);
+        continue;
+      }
+
+      // Count current checkouts for this feature
+      const currentOut = activeSessions.filter(s => s.feature === feature).length;
+      const seats = featureSeats[feature] || 5;
+
+      if (currentOut >= seats) {
+        // Denial
+        lines.push(`${time} (SW_D) DENIED: "${feature}" ${user}@${host} (Licensed number of users already reached. (-4,342:10054 ""))`);
+      } else {
+        // Checkout
+        lines.push(`${time} (SW_D) OUT: "${feature}" ${user}@${host}`);
+        activeSessions.push({ user, host, feature, start: t });
+      }
+    }
+
+    // End of day: check in most sessions
+    activeSessions.forEach((s, i) => {
+      if (Math.random() < 0.8) {
+        const t = new Date(d); t.setHours(rng(17, 22), rng(0, 59), rng(0, 59));
+        lines.push(`${fmtTime(t)} (SW_D) IN: "${s.feature}" ${s.user}@${s.host}`);
+        activeSessions.splice(i, 1);
+      }
+    });
+  }
+
+  // Some errors sprinkled in
+  const errDate = new Date(startDate); errDate.setDate(errDate.getDate() + 12);
+  lines.push(`${fmtTime(errDate)} (SW_D) Error getting ethernet address: Cannot find an available ethernet adapter.`);
+  const errDate2 = new Date(startDate); errDate2.setDate(errDate2.getDate() + 20);
+  lines.push(`${fmtTime(errDate2)} (lmgrd) SW_D reported server error: -15,570`);
+
+  return lines.join('\n');
+};
 
 // --- Utils ---
 const formatDuration = (mins: number) => {
@@ -485,9 +581,13 @@ export function App() {
   const [filterFeatures, setFilterFeatures] = useState<string[]>([]);
   
   // Options file builder state
+  const [optTimeoutEnabled, setOptTimeoutEnabled] = useState(false);
   const [optTimeout, setOptTimeout] = useState(3600);
+  const [optFeatureTimeouts, setOptFeatureTimeouts] = useState<{ feature: string, seconds: number }[]>([]);
   const [optGroups, setOptGroups] = useState<{ name: string, users: string[] }[]>([]);
-  const [optRules, setOptRules] = useState<{ type: 'MAX' | 'RESERVE' | 'INCLUDE' | 'EXCLUDE', count: number, feature: string, groupOrUser: string, targetType: 'GROUP' | 'USER' }[]>([]);
+  const [optRules, setOptRules] = useState<{ type: 'MAX' | 'RESERVE' | 'INCLUDE' | 'EXCLUDE' | 'INCLUDE_BORROW' | 'EXCLUDE_BORROW', count: number, feature: string, groupOrUser: string, targetType: 'GROUP' | 'USER' | 'HOST' | 'INTERNET', versionFilter: string }[]>([]);
+  const [customUsers, setCustomUsers] = useState<string[]>([]);
+  const [licenseCosts, setLicenseCosts] = useState<Record<string, number>>({});
   const [optCopied, setOptCopied] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -888,6 +988,12 @@ export function App() {
                   </div>
                 )}
               </label>
+              <button
+                onClick={() => { setIsParsing(true); setTimeout(() => { setData(parseLogFile(generateDemoLog())); setIsParsing(false); }, 300); }}
+                className="mt-3 w-full py-2.5 border border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors"
+              >
+                No log file handy? <span className="text-[#1871bd]">Try with sample data →</span>
+              </button>
             </div>
           </div>
 
@@ -936,6 +1042,7 @@ export function App() {
               { id: 'denials', icon: ShieldAlert, label: 'Denial Logs' },
               { id: 'errors', icon: AlertTriangle, label: 'System Errors' },
               { id: 'reports', icon: FileDown, label: 'Exports' },
+            { id: 'cost', icon: DollarSign, label: 'Cost & Right-Sizing' },
             { id: 'options', icon: Settings, label: 'Options File' }
             ].map((item) => (
               <button
@@ -974,6 +1081,7 @@ export function App() {
             { id: 'denials', icon: ShieldAlert, label: 'Denials' },
             { id: 'errors', icon: AlertTriangle, label: 'Errors' },
             { id: 'reports', icon: FileDown, label: 'Exports' },
+            { id: 'cost', icon: DollarSign, label: 'Cost & Right-Sizing' },
             { id: 'options', icon: Settings, label: 'Options File' }
           ].map((item) => (
             <button
@@ -1040,6 +1148,7 @@ export function App() {
               {activeTab === 'denials' && 'Denial Intelligence'}
               {activeTab === 'errors' && 'System Events'}
               {activeTab === 'reports' && 'Reports & Exports'}
+              {activeTab === 'cost' && 'Cost Analysis & Right-Sizing'}
               {activeTab === 'options' && 'Options File Builder'}
             </h1>
             <p className="text-xs text-slate-500 font-mono-brand">
@@ -1628,11 +1737,41 @@ export function App() {
                     Need further custom analysis? Export the structured dataset for PowerBI, Excel, or internal auditing tools.
                   </p>
                   <div className="grid grid-cols-2 gap-4 mt-auto">
-                    <button className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
+                    <button onClick={() => {
+                      if (!d) return;
+                      const rows = [['User','Host','Feature','Start','End','Duration (min)'].join(','),
+                        ...d.sessions.map(s => [s.user, s.host, s.feature, s.start.toISOString(), s.end?.toISOString() || '', Math.round(s.duration || 0)].join(','))];
+                      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'sessions.csv'; a.click();
+                    }} className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
                       Session Table
                     </button>
-                    <button className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
+                    <button onClick={() => {
+                      if (!d) return;
+                      const rows = [['User','Sessions','Total Hours','Avg Session (min)','Denials'].join(','),
+                        ...Object.entries(d.userStats).map(([u, s]) => [u, s.sessions, (s.totalDuration / 60).toFixed(1), s.sessions > 0 ? Math.round(s.totalDuration / s.sessions) : 0, s.denials].join(','))];
+                      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'user-statistics.csv'; a.click();
+                    }} className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
                       User Statistics
+                    </button>
+                    <button onClick={() => {
+                      if (!d) return;
+                      const rows = [['Feature','Checkouts','Denials','Denial Rate %','Total Hours'].join(','),
+                        ...Object.entries(d.featureStats).map(([f, s]) => [f, s.checkouts, s.denials, s.checkouts > 0 ? ((s.denials / (s.checkouts + s.denials)) * 100).toFixed(1) : '0', (s.totalDuration / 60).toFixed(1)].join(','))];
+                      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'feature-statistics.csv'; a.click();
+                    }} className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
+                      Feature Stats
+                    </button>
+                    <button onClick={() => {
+                      if (!d) return;
+                      const rows = [['Timestamp','Feature','User','Host','Reason'].join(','),
+                        ...d.denials.map(e => [e.time, e.feature || '', e.user || '', e.host || '', (e.reason || '').replace(/,/g, ';')].join(','))];
+                      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+                      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'denials.csv'; a.click();
+                    }} className="py-4 bg-slate-800 hover:bg-slate-700 font-black text-xs rounded-lg transition-all tracking-widest uppercase">
+                      Denial Log
                     </button>
                   </div>
                 </div>
@@ -1665,20 +1804,212 @@ export function App() {
             </div>
           )}
 
+          {activeTab === 'cost' && d && (() => {
+            const features = Object.keys(d.featureStats);
+            const logDays = d.sessions.length > 0 ? Math.max(1, Math.round((new Date(d.sessions[d.sessions.length - 1]?.start).getTime() - new Date(d.sessions[0]?.start).getTime()) / 86400000)) : 1;
+
+            return (
+              <div className="space-y-6 overflow-x-hidden">
+                {/* Cost input */}
+                <div className="border-l-2 border-[#1871bd] bg-[#111827] px-5 py-4">
+                  <p className="text-sm text-slate-300 mb-1">Enter your annual cost per seat to calculate waste and savings opportunities.</p>
+                  <p className="text-[10px] text-slate-600">All calculations are based on {logDays} days of log data, annualized to 365 days. Costs are estimates — actual savings depend on your licensing agreement.</p>
+                </div>
+
+                <div className="border border-slate-800 bg-[#111827] p-5">
+                  <h3 className="text-xs font-semibold text-slate-400 mb-3">Annual Cost per Seat</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {features.map(f => (
+                      <div key={f} className="flex items-center gap-2">
+                        <span className="text-[10px] text-[#46b6e3] font-mono-brand truncate flex-1">{SNL_FEATURES[f.toLowerCase()] || f}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] text-slate-600">$</span>
+                          <input type="number" value={licenseCosts[f] || ''} placeholder="0"
+                            onChange={e => setLicenseCosts({ ...licenseCosts, [f]: Number(e.target.value) })}
+                            className="bg-[#0c1220] border border-slate-800 text-white text-[11px] px-2 py-1 w-20 font-mono-brand focus:border-[#1871bd] focus:outline-none placeholder:text-slate-700" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right-Sizing Panel */}
+                <div className="border border-slate-800 bg-[#111827] p-5">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-1 flex items-center gap-2"><TrendingDown size={14} className="text-[#46b6e3]" /> Right-Sizing Recommendations</h3>
+                  <p className="text-[10px] text-slate-600 mb-4">Based on peak concurrent usage vs total seats available.</p>
+                  <div className="space-y-3">
+                    {features.map(f => {
+                      const stats = d.featureStats[f];
+                      const peakConcurrent = d.concurrentUsage.reduce((max, c) => {
+                        // We approximate per-feature peak from sessions
+                        return max;
+                      }, 0);
+                      // Calculate actual per-feature peak concurrent from sessions
+                      const featureSessions = d.sessions.filter(s => s.feature === f);
+                      const events: { time: number, delta: number }[] = [];
+                      featureSessions.forEach(s => {
+                        events.push({ time: s.start.getTime(), delta: 1 });
+                        if (s.end) events.push({ time: s.end.getTime(), delta: -1 });
+                      });
+                      events.sort((a, b) => a.time - b.time);
+                      let concurrent = 0, featurePeak = 0;
+                      events.forEach(e => { concurrent += e.delta; featurePeak = Math.max(featurePeak, concurrent); });
+
+                      const totalSeats = featurePeak; // We don't know total from log, use peak as baseline
+                      const denials = stats.denials;
+                      const checkouts = stats.checkouts;
+                      const denialRate = checkouts + denials > 0 ? (denials / (checkouts + denials)) * 100 : 0;
+                      const cost = licenseCosts[f] || 0;
+                      const avgDaily = featureSessions.length / logDays;
+                      
+                      // Utilization categories
+                      const isOverUtilized = denialRate > 3;
+                      const isUnderUtilized = featurePeak > 0 && avgDaily < featurePeak * 0.3 && denialRate === 0;
+                      
+                      return (
+                        <div key={f} className={`p-4 border ${isOverUtilized ? 'border-red-500/40 bg-red-500/5' : isUnderUtilized ? 'border-slate-800 bg-[#0c1220]' : 'border-emerald-500/30 bg-[#0c1220]'}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <span className="font-mono-brand text-[#46b6e3] text-xs">{SNL_FEATURES[f.toLowerCase()] || f}</span>
+                            {isOverUtilized && <span className="text-[10px] px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 font-semibold flex items-center gap-1"><TrendingUp size={10} /> Needs More Seats</span>}
+                            {isUnderUtilized && <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-500 border border-slate-700">Potentially Over-Provisioned</span>}
+                            {!isOverUtilized && !isUnderUtilized && <span className="text-[10px] px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Right-Sized</span>}
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                            <div>
+                              <p className="text-slate-600 text-[10px]">Peak concurrent</p>
+                              <p className="text-white font-mono-brand">{featurePeak}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-600 text-[10px]">Avg daily checkouts</p>
+                              <p className="text-white font-mono-brand">{avgDaily.toFixed(1)}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-600 text-[10px]">Denial rate</p>
+                              <p className={`font-mono-brand ${denialRate > 3 ? 'text-red-400' : 'text-white'}`}>{denialRate.toFixed(1)}%</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-600 text-[10px]">Total denials</p>
+                              <p className={`font-mono-brand ${denials > 0 ? 'text-red-400' : 'text-white'}`}>{denials}</p>
+                            </div>
+                          </div>
+
+                          {/* Cost impact — over-utilization gets more visual weight */}
+                          {cost > 0 && (
+                            <div className={`mt-3 pt-3 border-t ${isOverUtilized ? 'border-red-500/30' : 'border-slate-800/50'}`}>
+                              {isOverUtilized && (
+                                <div className="bg-red-500/10 border border-red-500/20 p-3 mb-2">
+                                  <p className="text-red-400 text-xs font-semibold mb-1">⚠ Engineer downtime from denials</p>
+                                  <p className="text-slate-400 text-[11px]">
+                                    {denials} denied requests over {logDays} days. Assuming an average of {Math.round(15 + denialRate * 2)} minutes lost per denial 
+                                    (waiting, retrying, context-switching), that's roughly <span className="text-red-400 font-mono-brand font-semibold">
+                                    {Math.round(denials * (15 + denialRate * 2) / 60)} hours</span> of engineer time lost.
+                                  </p>
+                                  <p className="text-red-300 text-xs mt-2 font-semibold">
+                                    Adding {Math.ceil(denialRate / 10)} seat{Math.ceil(denialRate / 10) > 1 ? 's' : ''} would cost ~${(Math.ceil(denialRate / 10) * cost).toLocaleString()}/yr but could recover significant productivity.
+                                  </p>
+                                </div>
+                              )}
+                              {isUnderUtilized && (
+                                <p className="text-slate-500 text-[11px]">
+                                  Low daily usage relative to peak. Could potentially reduce by 1 seat saving <span className="text-slate-400 font-mono-brand">${cost.toLocaleString()}/yr</span>, 
+                                  but monitor for seasonal spikes before cutting.
+                                </p>
+                              )}
+                              {!isOverUtilized && !isUnderUtilized && (
+                                <p className="text-emerald-400/70 text-[11px]">Current seat count appears well-matched to demand.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Log Health Check */}
+                <div className="border border-slate-800 bg-[#111827] p-5">
+                  <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2"><Activity size={14} className="text-[#1871bd]" /> Log Health Check</h3>
+                  <div className="space-y-2">
+                    {(() => {
+                      const checks: { status: 'ok' | 'warn' | 'error', label: string, detail: string }[] = [];
+                      
+                      // Check for log restart (multiple "started on" entries)
+                      const startEntries = d.entries.filter(e => e.raw.includes('FLEXnet Licensing') && e.raw.includes('started on'));
+                      if (startEntries.length > 1) {
+                        checks.push({ status: 'warn', label: 'Log contains multiple server starts', detail: `Found ${startEntries.length} restart events. Your log may be overwriting on restart instead of appending. Add a "+" prefix to your log path in the registry to preserve history.` });
+                      } else {
+                        checks.push({ status: 'ok', label: 'Single server session detected', detail: 'Log appears continuous with no restarts.' });
+                      }
+
+                      // Check for time gaps > 24h (missing data)
+                      const timestamps = d.sessions.map(s => s.start.getTime()).sort();
+                      let maxGap = 0, gapStart = 0;
+                      for (let i = 1; i < timestamps.length; i++) {
+                        const gap = timestamps[i] - timestamps[i - 1];
+                        if (gap > maxGap) { maxGap = gap; gapStart = timestamps[i - 1]; }
+                      }
+                      if (maxGap > 48 * 3600000) {
+                        checks.push({ status: 'warn', label: 'Large time gap detected', detail: `${Math.round(maxGap / 3600000)} hour gap starting ${new Date(gapStart).toLocaleDateString()}. Could indicate a log overwrite, server downtime, or missing data.` });
+                      } else {
+                        checks.push({ status: 'ok', label: 'No significant time gaps', detail: 'Data appears continuous throughout the log period.' });
+                      }
+
+                      // Check for errors
+                      if (d.errors.length > 5) {
+                        checks.push({ status: 'error', label: `${d.errors.length} errors detected`, detail: 'Review the System Errors tab for details.' });
+                      } else if (d.errors.length > 0) {
+                        checks.push({ status: 'warn', label: `${d.errors.length} minor error(s)`, detail: 'A few errors were found. Check the System Errors tab.' });
+                      } else {
+                        checks.push({ status: 'ok', label: 'No errors in log', detail: 'Clean log with no error entries.' });
+                      }
+
+                      // Data coverage
+                      checks.push({ status: logDays >= 14 ? 'ok' : 'warn', label: `${logDays} days of data`, detail: logDays >= 14 ? 'Good coverage for trend analysis.' : 'Less than 2 weeks — trends may not be reliable. Enable log appending for better historical data.' });
+
+                      return checks.map((c, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs">
+                          <span className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${c.status === 'ok' ? 'bg-emerald-500' : c.status === 'warn' ? 'bg-amber-400' : 'bg-red-500'}`} />
+                          <div>
+                            <span className="text-slate-300 font-medium">{c.label}</span>
+                            <p className="text-slate-600 text-[10px]">{c.detail}</p>
+                            {c.label.includes('overwriting') && (
+                              <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000109458" target="_blank" rel="noopener" className="text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Learn how to enable log appending →</a>
+                            )}
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {activeTab === 'options' && d && (() => {
             // Generate options file text
             const generateOptionsFile = () => {
               const lines: string[] = [];
               lines.push('# SolidNetWork License Options File (sw_d.opt)');
-              lines.push(`# Generated by SNL License Parser · ${new Date().toLocaleDateString()}`);
+              lines.push(`# Generated by SNL License Dashboard · ${new Date().toLocaleDateString()}`);
               lines.push(`# Server: ${data.metadata.serverName}`);
               lines.push('');
-              lines.push(`# Idle timeout (seconds) — licenses returned after this period of inactivity`);
-              lines.push(`TIMEOUTALL ${optTimeout}`);
+              if (optTimeoutEnabled) {
+                lines.push(`# Return idle licenses after ${formatDuration(optTimeout / 60)} of inactivity`);
+                lines.push(`TIMEOUTALL ${optTimeout}`);
+              } else {
+                lines.push('# No global idle timeout configured');
+              }
+              if (optFeatureTimeouts.length > 0) {
+                lines.push('');
+                lines.push('# Per-feature idle timeouts (override global)');
+                optFeatureTimeouts.forEach(ft => {
+                  lines.push(`TIMEOUT ${ft.feature} ${ft.seconds}`);
+                });
+              }
               lines.push('');
 
               if (optGroups.length > 0) {
-                lines.push('# --- User Groups ---');
+                lines.push('# User Groups');
                 optGroups.forEach(g => {
                   if (g.users.length > 0) {
                     lines.push(`GROUP ${g.name} ${g.users.join(' ')}`);
@@ -1688,12 +2019,13 @@ export function App() {
               }
 
               if (optRules.length > 0) {
-                lines.push('# --- License Rules ---');
+                lines.push('# License Rules');
                 optRules.forEach(r => {
+                  const feat = r.versionFilter ? `${r.feature}:SWVERSION=${r.versionFilter}` : r.feature;
                   if (r.type === 'MAX' || r.type === 'RESERVE') {
-                    lines.push(`${r.type} ${r.count} ${r.feature} ${r.targetType} ${r.groupOrUser}`);
+                    lines.push(`${r.type} ${r.count} ${feat} ${r.targetType} ${r.groupOrUser}`);
                   } else {
-                    lines.push(`${r.type} ${r.feature} ${r.targetType} ${r.groupOrUser}`);
+                    lines.push(`${r.type} ${feat} ${r.targetType} ${r.groupOrUser}`);
                   }
                 });
               }
@@ -1703,27 +2035,151 @@ export function App() {
 
             const optionsText = generateOptionsFile();
             const detectedFeatures = Object.keys(d.featureStats);
-            const detectedUsers = Array.from(new Set(d.sessions.map(s => s.user))).sort();
+            const logUsers = Array.from(new Set(d.sessions.map(s => s.user))).sort();
+            const detectedUsers = [...new Set([...logUsers, ...customUsers])].sort();
+            const detectedHosts = Object.keys(d.hostStats).sort();
             const avgSessionMins = d.sessions.length > 0 ? d.sessions.reduce((a, s) => a + (s.duration || 0), 0) / d.sessions.length : 0;
             const longSessionPct = d.sessions.length > 0 ? Math.round((d.sessions.filter(s => (s.duration || 0) > 480).length / d.sessions.length) * 100) : 0;
 
+            // Natural language descriptions for rule types
+            const ruleDescriptions: Record<string, { label: string, hint: string }> = {
+              'RESERVE': { label: 'Reserve seats for', hint: 'Sets aside licenses exclusively for this target. No one else can use these seats, even if they\'re idle. Use when a team absolutely must have guaranteed access.' },
+              'MAX': { label: 'Cap seats at', hint: 'Limits how many licenses this target can hold at once. They can still use the feature, just not more than this many simultaneously. Use to prevent one team from hogging all seats.' },
+              'INCLUDE': { label: 'Restrict to only', hint: 'Locks this feature so ONLY this target can use it — everyone else gets denied. Use carefully, as it blocks all other users.' },
+              'EXCLUDE': { label: 'Block completely', hint: 'Prevents this target from using this feature at all. They\'ll get a "license denied" error. Use to cut off specific users or machines.' },
+              'INCLUDE_BORROW': { label: 'Allow borrowing for', hint: 'Only this target can borrow (take offline) this license. Borrowing lets users work away from the network for a set period.' },
+              'EXCLUDE_BORROW': { label: 'Block borrowing for', hint: 'Prevents this target from taking this license offline. They can still use it while connected to the network.' },
+            };
+
+            const targetLabels: Record<string, { label: string, hint: string }> = {
+              'USER': { label: 'a user', hint: 'A specific person\'s Windows login name' },
+              'GROUP': { label: 'a group', hint: 'A named set of users defined above' },
+              'HOST': { label: 'a machine', hint: 'A specific computer by its network hostname' },
+              'INTERNET': { label: 'a subnet', hint: 'An IP address range — use * as wildcard (e.g. 192.168.1.*)' },
+            };
+
+            const rulesEndRef = React.createRef<HTMLDivElement>();
+            const scrollToRules = () => setTimeout(() => rulesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+            const addRuleAndScroll = (rule: typeof optRules[0]) => { setOptRules([...optRules, rule]); scrollToRules(); };
+
+            // Parse an existing sw_d.opt file
+            const importOptionsFile = (text: string) => {
+              const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+              const newGroups: typeof optGroups = [];
+              const newRules: typeof optRules = [];
+              let foundTimeout = false;
+              const newFeatureTimeouts: typeof optFeatureTimeouts = [];
+              const newCustomUsers: string[] = [];
+
+              for (const line of lines) {
+                const parts = line.split(/\s+/);
+                const cmd = parts[0]?.toUpperCase();
+
+                if (cmd === 'TIMEOUTALL' && parts[1]) {
+                  setOptTimeoutEnabled(true);
+                  setOptTimeout(parseInt(parts[1]) || 3600);
+                  foundTimeout = true;
+                } else if (cmd === 'TIMEOUT' && parts[1] && parts[2]) {
+                  newFeatureTimeouts.push({ feature: parts[1], seconds: parseInt(parts[2]) || 3600 });
+                } else if (cmd === 'GROUP' && parts[1]) {
+                  const users = parts.slice(2);
+                  newGroups.push({ name: parts[1], users });
+                  users.forEach(u => { if (!logUsers.includes(u) && !newCustomUsers.includes(u)) newCustomUsers.push(u); });
+                } else if (['MAX', 'RESERVE'].includes(cmd) && parts.length >= 5) {
+                  // MAX/RESERVE count feature TARGET target_name
+                  const feature = parts[2].split(':')[0];
+                  const versionMatch = parts[2].match(/:SWVERSION=(\d+)/i);
+                  newRules.push({
+                    type: cmd as any,
+                    count: parseInt(parts[1]) || 1,
+                    feature,
+                    targetType: (parts[3]?.toUpperCase() || 'USER') as any,
+                    groupOrUser: parts[4] || '',
+                    versionFilter: versionMatch?.[1] || '',
+                  });
+                } else if (['INCLUDE', 'EXCLUDE', 'INCLUDE_BORROW', 'EXCLUDE_BORROW'].includes(cmd) && parts.length >= 4) {
+                  // INCLUDE/EXCLUDE feature TARGET target_name
+                  const feature = parts[1].split(':')[0];
+                  const versionMatch = parts[1].match(/:SWVERSION=(\d+)/i);
+                  newRules.push({
+                    type: cmd as any,
+                    count: 1,
+                    feature,
+                    targetType: (parts[2]?.toUpperCase() || 'USER') as any,
+                    groupOrUser: parts[3] || '',
+                    versionFilter: versionMatch?.[1] || '',
+                  });
+                }
+              }
+
+              if (!foundTimeout) { setOptTimeoutEnabled(false); }
+              if (newFeatureTimeouts.length > 0) setOptFeatureTimeouts(newFeatureTimeouts);
+              if (newGroups.length > 0) setOptGroups(newGroups);
+              if (newRules.length > 0) setOptRules(newRules);
+              if (newCustomUsers.length > 0) setCustomUsers(prev => [...new Set([...prev, ...newCustomUsers])]);
+            };
+
             return (
-              <div className="space-y-8">
+              <div className="space-y-6 overflow-x-hidden">
+                {/* Intro / what is this */}
+                <div className="border-l-2 border-[#1871bd] bg-[#111827] px-5 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-slate-300 mb-1">The options file (<span className="font-mono-brand text-[#46b6e3]">sw_d.opt</span>) controls how your SolidNetWork licenses are distributed.</p>
+                      <p className="text-xs text-slate-500">Build a new configuration or import an existing one to edit it.</p>
+                      <p className="text-[10px] text-slate-600 mt-2">Place the generated file at: <span className="font-mono-brand text-slate-400">...\SolidNetWork License Manager\licenses\sw_d.opt</span> then restart the license service.</p>
+                    </div>
+                    <label className="shrink-0 cursor-pointer px-3 py-2 border border-dashed border-[#1871bd]/50 text-[11px] text-[#1871bd] hover:text-[#46b6e3] hover:border-[#46b6e3]/50 transition-colors flex items-center gap-1.5">
+                      <Upload size={14} /> Import existing sw_d.opt
+                      <input type="file" accept=".opt,.txt,text/plain,*/*" className="hidden" onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = () => { if (typeof reader.result === 'string') importOptionsFile(reader.result); };
+                          reader.readAsText(file);
+                        }
+                        e.target.value = '';
+                      }} />
+                    </label>
+                  </div>
+                </div>
+
                 {/* Data-driven suggestions */}
-                <div className="border border-slate-800 bg-[#111827] p-6">
-                  <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2"><Info size={14} className="text-[#1871bd]" /> Suggestions from Your Log Data</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <div className="border border-slate-800 bg-[#111827] p-5">
+                  <h3 className="text-xs font-semibold text-slate-400 mb-3 flex items-center gap-2"><Info size={13} className="text-[#1871bd]" /> Recommendations from Your Log Data</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                     <div className="p-3 bg-[#0c1220] border border-slate-800">
-                      <p className="text-slate-500 mb-1">Avg session: <span className="text-white font-mono-brand">{formatDuration(avgSessionMins)}</span></p>
-                      <p className="text-slate-500">Suggested timeout: <span className="text-[#46b6e3] font-mono-brand">{avgSessionMins < 60 ? '1800' : avgSessionMins < 240 ? '3600' : '7200'}s</span></p>
+                      <p className="text-slate-400 mb-1">Your average session is <span className="text-white font-mono-brand">{formatDuration(avgSessionMins)}</span></p>
+                      <p className="text-slate-500 text-[11px]">Suggested timeout: <span className="text-[#46b6e3] font-mono-brand">{avgSessionMins < 60 ? '30 min' : avgSessionMins < 240 ? '1 hour' : '2 hours'}</span></p>
+                      {!optTimeoutEnabled && <p className="text-amber-400/70 text-[10px] mt-1">⚠ No timeout set — licenses held until SOLIDWORKS is closed. Users leaving it open overnight will block others.</p>}
+                      <button onClick={() => { setOptTimeoutEnabled(true); setOptTimeout(avgSessionMins < 60 ? 1800 : avgSessionMins < 240 ? 3600 : 7200); }} className="text-[10px] text-[#1871bd] hover:text-[#46b6e3] mt-1">Apply this →</button>
                     </div>
                     <div className="p-3 bg-[#0c1220] border border-slate-800">
-                      <p className="text-slate-500 mb-1">Long sessions (8h+): <span className={`font-mono-brand ${longSessionPct > 20 ? 'text-amber-400' : 'text-white'}`}>{longSessionPct}%</span></p>
-                      {longSessionPct > 20 && <p className="text-amber-400/70">Consider shorter timeout to free idle licenses</p>}
+                      <p className="text-slate-400 mb-1"><span className={`font-mono-brand ${longSessionPct > 20 ? 'text-amber-400' : 'text-white'}`}>{longSessionPct}%</span> of sessions last 8+ hours</p>
+                      {longSessionPct > 20 ? (
+                        <>
+                          <p className="text-amber-400/70 text-[11px]">Try a shorter timeout to reclaim seats left open overnight.</p>
+                          <button onClick={() => { setOptTimeoutEnabled(true); setOptTimeout(1800); }} className="text-[10px] text-[#1871bd] hover:text-[#46b6e3] mt-1">Set 30 min timeout →</button>
+                        </>
+                      ) : (
+                        <p className="text-slate-500 text-[11px]">Looks healthy — most users close SOLIDWORKS at end of day. No action needed.</p>
+                      )}
                     </div>
                     <div className="p-3 bg-[#0c1220] border border-slate-800">
-                      <p className="text-slate-500 mb-1">Most denied feature:</p>
-                      {(() => { const top = d.denialRatioByFeature[0]; return top ? <p className="text-red-400 font-mono-brand">{top.name} <span className="text-slate-500">({top.ratio}% denial rate)</span></p> : <p className="text-slate-500">None</p>; })()}
+                      {(() => { const top3 = d.denialRatioByFeature.filter((f: any) => f.ratio > 0).slice(0, 3); return top3.length > 0 ? (
+                        <>
+                          <p className="text-slate-400 mb-2">Most denied features:</p>
+                          {top3.map((f: any, i: number) => (
+                            <div key={f.name} className="flex items-center justify-between mb-1.5">
+                              <span className="text-red-400 font-mono-brand text-[11px]">{SNL_FEATURES[f.name.toLowerCase()] || f.name} <span className="text-slate-600">({f.ratio}%)</span></span>
+                              <button onClick={() => addRuleAndScroll({ type: 'RESERVE', count: 1, feature: f.name, groupOrUser: '', targetType: 'USER', versionFilter: '' })} className="text-[10px] text-[#1871bd] hover:text-[#46b6e3] shrink-0">Reserve →</button>
+                            </div>
+                          ))}
+                          <p className="text-slate-500 text-[10px] mt-1">Reserve seats for critical users or shorten timeouts to free idle licenses.</p>
+                        </>
+                      ) : (
+                        <p className="text-slate-500 text-[11px]">✓ No denials recorded — your license pool is handling demand well.</p>
+                      ); })()}
                     </div>
                   </div>
                 </div>
@@ -1731,153 +2187,301 @@ export function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Left column: Configuration */}
                   <div className="space-y-6">
-                    {/* Timeout */}
+
+                    {/* Step 1: Timeout */}
                     <div className="border border-slate-800 bg-[#111827] p-5">
-                      <h3 className="text-sm font-semibold text-slate-300 mb-3">Idle Timeout</h3>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="number"
-                          value={optTimeout}
-                          onChange={e => setOptTimeout(Number(e.target.value))}
-                          min={900}
-                          step={300}
-                          className="bg-[#0c1220] border border-slate-800 text-white text-sm px-3 py-2 w-28 font-mono-brand focus:border-[#1871bd] focus:outline-none"
-                        />
-                        <span className="text-xs text-slate-500">seconds ({formatDuration(optTimeout / 60)})</span>
-                        <div className="flex gap-1 ml-auto">
-                          {[1800, 3600, 7200].map(v => (
-                            <button key={v} onClick={() => setOptTimeout(v)} className={`px-2 py-1 text-[10px] border ${optTimeout === v ? 'border-[#1871bd] text-[#1871bd]' : 'border-slate-800 text-slate-500 hover:text-white'}`}>
-                              {v / 60}m
-                            </button>
-                          ))}
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-5 h-5 rounded-full bg-[#1871bd]/20 text-[#46b6e3] text-[10px] flex items-center justify-center font-bold">1</span>
+                        <h3 className="text-sm font-semibold text-slate-300">Idle Timeout</h3>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mb-2 ml-7">When a user leaves SOLIDWORKS idle, how long before their license is returned to the pool?</p>
+                      <details className="text-[10px] text-slate-600 mb-4 ml-7">
+                        <summary className="cursor-pointer hover:text-slate-400">How is "idle" measured?</summary>
+                        <p className="mt-1 pl-2 border-l border-slate-800">No mouse or keyboard activity in SOLIDWORKS — minimizing it or switching to another app counts as idle. The app reports inactivity to the license server.</p>
+                      </details>
+
+                      {/* Global toggle */}
+                      <div className="flex flex-wrap items-center gap-2 mb-3 ml-7">
+                        <button onClick={() => setOptTimeoutEnabled(false)} className={`px-3 py-1.5 text-xs border transition-colors ${!optTimeoutEnabled ? 'border-[#1871bd] text-[#46b6e3] bg-[#1871bd]/10' : 'border-slate-800 text-slate-500 hover:text-white'}`}>No timeout</button>
+                        {[
+                          { v: 1800, label: '30 min' }, { v: 3600, label: '1 hour' }, { v: 7200, label: '2 hours' }, { v: 14400, label: '4 hours' }
+                        ].map(o => (
+                          <button key={o.v} onClick={() => { setOptTimeoutEnabled(true); setOptTimeout(o.v); }} className={`px-3 py-1.5 text-xs border transition-colors ${optTimeoutEnabled && optTimeout === o.v ? 'border-[#1871bd] text-[#46b6e3] bg-[#1871bd]/10' : 'border-slate-800 text-slate-500 hover:text-white'}`}>{o.label}</button>
+                        ))}
+                        {optTimeoutEnabled && ![1800, 3600, 7200, 14400].includes(optTimeout) && (
+                          <span className="text-xs text-[#46b6e3] font-mono-brand">{formatDuration(optTimeout / 60)}</span>
+                        )}
+                      </div>
+                      {optTimeoutEnabled && (
+                        <div className="flex items-center gap-2 ml-7 mb-3">
+                          <span className="text-[11px] text-slate-500">Custom:</span>
+                          <input type="number" value={optTimeout} onChange={e => setOptTimeout(Math.max(900, Number(e.target.value)))} min={900} step={300}
+                            className="bg-[#0c1220] border border-slate-800 text-white text-xs px-2 py-1 w-24 font-mono-brand focus:border-[#1871bd] focus:outline-none" />
+                          <span className="text-[10px] text-slate-600">seconds (min 900)</span>
                         </div>
+                      )}
+                      {/* Per-feature timeouts */}
+                      <div className="border-t border-slate-800/50 pt-3 mt-3 ml-7">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <span className="text-[11px] text-slate-400">Different timeout for specific features?</span>
+                            <p className="text-[10px] text-slate-600">e.g. Simulation licenses are expensive — reclaim them faster.</p>
+                          </div>
+                          <button onClick={() => setOptFeatureTimeouts([...optFeatureTimeouts, { feature: detectedFeatures[0] || 'solidworks', seconds: 1800 }])}
+                            className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1 shrink-0"><Plus size={12} /> Add</button>
+                        </div>
+                        {optFeatureTimeouts.map((ft, fi) => (
+                          <div key={fi} className="bg-[#0c1220] border border-slate-800 p-2 mb-2">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="text-slate-500">Return</span>
+                              <select value={ft.feature} onChange={e => { const t = [...optFeatureTimeouts]; t[fi].feature = e.target.value; setOptFeatureTimeouts(t); }}
+                                className="bg-[#111827] border border-slate-800 text-[#46b6e3] text-[11px] px-2 py-1 font-mono-brand focus:outline-none min-w-0 max-w-[160px]">
+                                {detectedFeatures.map(f => <option key={f} value={f}>{SNL_FEATURES[f.toLowerCase()] || f}</option>)}
+                              </select>
+                              <span className="text-slate-500">after</span>
+                              <button onClick={() => setOptFeatureTimeouts(optFeatureTimeouts.filter((_, i) => i !== fi))} className="text-slate-600 hover:text-red-400 ml-auto"><Trash2 size={12} /></button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              {[{ v: 1800, l: '30m' }, { v: 3600, l: '60m' }, { v: 7200, l: '120m' }].map(o => (
+                                <button key={o.v} onClick={() => { const t = [...optFeatureTimeouts]; t[fi].seconds = o.v; setOptFeatureTimeouts(t); }}
+                                  className={`px-2 py-0.5 text-[10px] border ${ft.seconds === o.v ? 'border-[#1871bd] text-[#46b6e3]' : 'border-slate-800 text-slate-600 hover:text-white'}`}>{o.l}</button>
+                              ))}
+                              <input type="number" value={ft.seconds} min={900} step={300} onChange={e => { const t = [...optFeatureTimeouts]; t[fi].seconds = Number(e.target.value); setOptFeatureTimeouts(t); }}
+                                className="bg-[#111827] border border-slate-800 text-white text-[10px] px-2 py-0.5 w-16 font-mono-brand focus:outline-none" />
+                              <span className="text-slate-600 text-[10px]">sec</span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
-                    {/* Groups */}
+                    {/* Step 2: Groups */}
                     <div className="border border-slate-800 bg-[#111827] p-5">
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-5 h-5 rounded-full bg-[#1871bd]/20 text-[#46b6e3] text-[10px] flex items-center justify-center font-bold">2</span>
                         <h3 className="text-sm font-semibold text-slate-300">User Groups</h3>
-                        <button
-                          onClick={() => setOptGroups([...optGroups, { name: `group${optGroups.length + 1}`, users: [] }])}
-                          className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1"
-                        >
-                          <Plus size={12} /> Add Group
-                        </button>
+                        <span className="text-[10px] text-slate-600 ml-1">(optional)</span>
                       </div>
-                      {optGroups.length === 0 && <p className="text-xs text-slate-500">No groups defined. Groups let you apply rules to sets of users.</p>}
-                      <div className="space-y-3">
+                      <p className="text-[11px] text-slate-500 mb-4 ml-7">Group users together so you can apply rules to entire teams at once — e.g. "Engineering" or "Chicago Office".</p>
+
+                      <div className="space-y-3 ml-7">
                         {optGroups.map((group, gi) => (
                           <div key={gi} className="bg-[#0c1220] border border-slate-800 p-3">
                             <div className="flex items-center gap-2 mb-2">
-                              <input
-                                type="text"
-                                value={group.name}
-                                onChange={e => { const g = [...optGroups]; g[gi].name = e.target.value.replace(/\s/g, '_'); setOptGroups(g); }}
-                                className="bg-transparent border-b border-slate-700 text-white text-xs font-mono-brand px-1 py-0.5 w-32 focus:border-[#1871bd] focus:outline-none"
-                              />
+                              <span className="text-[10px] text-slate-500">Group name:</span>
+                              <input type="text" value={group.name} onChange={e => { const g = [...optGroups]; g[gi].name = e.target.value.replace(/\s/g, '_'); setOptGroups(g); }}
+                                className="bg-transparent border-b border-slate-700 text-white text-xs font-mono-brand px-1 py-0.5 w-32 focus:border-[#1871bd] focus:outline-none" />
                               <button onClick={() => setOptGroups(optGroups.filter((_, i) => i !== gi))} className="ml-auto text-slate-600 hover:text-red-400"><Trash2 size={12} /></button>
                             </div>
                             <div className="flex flex-wrap gap-1 mb-2">
                               {group.users.map(u => (
                                 <span key={u} className="flex items-center gap-1 px-1.5 py-0.5 bg-[#1871bd]/10 border border-[#1871bd]/30 text-[#46b6e3] text-[10px]">
-                                  {u}
+                                  {u} {!logUsers.includes(u) && <span className="text-slate-600">(custom)</span>}
                                   <button onClick={() => { const g = [...optGroups]; g[gi].users = g[gi].users.filter(x => x !== u); setOptGroups(g); }}><X size={8} /></button>
                                 </span>
                               ))}
+                              {group.users.length === 0 && <span className="text-[10px] text-slate-600 italic">No members yet</span>}
                             </div>
-                            <select
-                              value=""
-                              onChange={e => { if (e.target.value) { const g = [...optGroups]; g[gi].users.push(e.target.value); setOptGroups(g); } }}
-                              className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1 w-full focus:border-[#1871bd] focus:outline-none"
-                            >
-                              <option value="">+ Add user from log...</option>
-                              {detectedUsers.filter(u => !group.users.includes(u)).map(u => (
-                                <option key={u} value={u}>{u} ({d.userStats[u]?.sessions || 0} sessions)</option>
-                              ))}
-                            </select>
+                            <div className="flex gap-1">
+                              <select value="" onChange={e => { if (e.target.value) { const g = [...optGroups]; g[gi].users.push(e.target.value); setOptGroups(g); } }}
+                                className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1 flex-1 focus:border-[#1871bd] focus:outline-none">
+                                <option value="">+ Pick from log…</option>
+                                {detectedUsers.filter(u => !group.users.includes(u)).map(u => (
+                                  <option key={u} value={u}>{u} {d.userStats[u] ? `(${d.userStats[u].sessions} sessions)` : '(custom)'}</option>
+                                ))}
+                              </select>
+                              <form className="flex gap-1" onSubmit={e => {
+                                e.preventDefault();
+                                const input = (e.target as HTMLFormElement).elements.namedItem('customUser') as HTMLInputElement;
+                                const val = input.value.trim();
+                                if (val && !group.users.includes(val)) {
+                                  const g = [...optGroups]; g[gi].users.push(val); setOptGroups(g);
+                                  if (!customUsers.includes(val)) setCustomUsers([...customUsers, val]);
+                                  input.value = '';
+                                }
+                              }}>
+                                <input name="customUser" type="text" placeholder="or type a name…" className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 w-28 focus:border-[#1871bd] focus:outline-none placeholder:text-slate-700" />
+                                <button type="submit" className="text-[#1871bd] hover:text-[#46b6e3] px-1"><Plus size={12} /></button>
+                              </form>
+                            </div>
                           </div>
                         ))}
+                        <button onClick={() => setOptGroups([...optGroups, { name: `group${optGroups.length + 1}`, users: [] }])}
+                          className="w-full py-2 border border-dashed border-slate-700 text-xs text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors flex items-center justify-center gap-1">
+                          <Plus size={14} /> Create a group
+                        </button>
                       </div>
                     </div>
 
-                    {/* Rules */}
+                    {/* Step 3: Rules */}
                     <div className="border border-slate-800 bg-[#111827] p-5">
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-5 h-5 rounded-full bg-[#1871bd]/20 text-[#46b6e3] text-[10px] flex items-center justify-center font-bold">3</span>
                         <h3 className="text-sm font-semibold text-slate-300">License Rules</h3>
-                        <button
-                          onClick={() => setOptRules([...optRules, { type: 'MAX', count: 1, feature: detectedFeatures[0] || 'solidworks', groupOrUser: optGroups[0]?.name || 'user1', targetType: 'GROUP' }])}
-                          className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1"
-                        >
-                          <Plus size={12} /> Add Rule
-                        </button>
+                        <span className="text-[10px] text-slate-600 ml-1">(optional)</span>
                       </div>
-                      {optRules.length === 0 && <p className="text-xs text-slate-500">No rules defined. Use MAX, RESERVE, INCLUDE, or EXCLUDE to control access.</p>}
-                      <div className="space-y-2">
-                        {optRules.map((rule, ri) => (
-                          <div key={ri} className="flex flex-wrap items-center gap-2 bg-[#0c1220] border border-slate-800 p-2">
-                            <select value={rule.type} onChange={e => { const r = [...optRules]; r[ri].type = e.target.value as any; setOptRules(r); }}
-                              className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 font-mono-brand focus:outline-none">
-                              <option value="MAX">MAX</option>
-                              <option value="RESERVE">RESERVE</option>
-                              <option value="INCLUDE">INCLUDE</option>
-                              <option value="EXCLUDE">EXCLUDE</option>
-                            </select>
-                            {(rule.type === 'MAX' || rule.type === 'RESERVE') && (
-                              <input type="number" value={rule.count} min={1} onChange={e => { const r = [...optRules]; r[ri].count = Number(e.target.value); setOptRules(r); }}
-                                className="bg-[#111827] border border-slate-800 text-white text-[11px] px-2 py-1 w-14 font-mono-brand focus:outline-none" />
-                            )}
-                            <select value={rule.feature} onChange={e => { const r = [...optRules]; r[ri].feature = e.target.value; setOptRules(r); }}
-                              className="bg-[#111827] border border-slate-800 text-[11px] text-[#46b6e3] px-2 py-1 font-mono-brand focus:outline-none flex-1 min-w-[120px]">
-                              {detectedFeatures.map(f => <option key={f} value={f}>{f} {SNL_FEATURES[f.toLowerCase()] ? `(${SNL_FEATURES[f.toLowerCase()]})` : ''}</option>)}
-                            </select>
-                            <select value={rule.targetType} onChange={e => { const r = [...optRules]; r[ri].targetType = e.target.value as any; setOptRules(r); }}
-                              className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1 focus:outline-none">
-                              <option value="GROUP">GROUP</option>
-                              <option value="USER">USER</option>
-                            </select>
-                            {rule.targetType === 'GROUP' ? (
-                              <select value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
-                                className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 focus:outline-none min-w-[100px]">
-                                {optGroups.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
-                                {optGroups.length === 0 && <option value="">No groups defined</option>}
-                              </select>
-                            ) : (
-                              <select value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
-                                className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1 focus:outline-none min-w-[100px]">
-                                {detectedUsers.map(u => <option key={u} value={u}>{u}</option>)}
-                              </select>
-                            )}
-                            <button onClick={() => setOptRules(optRules.filter((_, i) => i !== ri))} className="text-slate-600 hover:text-red-400"><Trash2 size={12} /></button>
-                          </div>
-                        ))}
+                      <p className="text-[11px] text-slate-500 mb-2 ml-7">Control who can use which features. Each rule applies to one target — a single user, machine, or group.</p>
+                      <p className="text-[10px] text-slate-600 mb-4 ml-7">💡 Need to apply the same rule to multiple users? Create a Group in Step 2 and target the group instead of individual users. Much cleaner than multiple rules.</p>
+
+                      <div className="space-y-3 ml-7">
+                        {optRules.map((rule, ri) => {
+                          const desc = ruleDescriptions[rule.type];
+                          return (
+                            <div key={ri} className="bg-[#0c1220] border border-slate-800 p-3">
+                              {/* Row 1: Action + count */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs mb-2">
+                                <select value={rule.type} onChange={e => { const r = [...optRules]; r[ri].type = e.target.value as any; setOptRules(r); }}
+                                  className="bg-[#111827] border border-slate-800 text-white text-[11px] px-2 py-1.5 focus:outline-none font-semibold max-w-[180px]">
+                                  {Object.entries(ruleDescriptions).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                </select>
+
+                                {(rule.type === 'MAX' || rule.type === 'RESERVE') && (
+                                  <input type="number" value={rule.count} min={1} onChange={e => { const r = [...optRules]; r[ri].count = Number(e.target.value); setOptRules(r); }}
+                                    className="bg-[#111827] border border-slate-800 text-white text-[11px] px-2 py-1.5 w-14 font-mono-brand focus:outline-none" />
+                                )}
+
+                                <span className="text-slate-500 shrink-0">of</span>
+
+                                <select value={rule.feature} onChange={e => { const r = [...optRules]; r[ri].feature = e.target.value; setOptRules(r); }}
+                                  className="bg-[#111827] border border-slate-800 text-[11px] text-[#46b6e3] px-2 py-1.5 font-mono-brand focus:outline-none min-w-0 max-w-[180px]">
+                                  {detectedFeatures.map(f => <option key={f} value={f}>{SNL_FEATURES[f.toLowerCase()] || f}</option>)}
+                                </select>
+
+                                <div className="flex gap-1 ml-auto shrink-0">
+                                  <button title="Duplicate rule" onClick={() => addRuleAndScroll({ ...rule })} className="text-slate-600 hover:text-[#46b6e3]"><Copy size={12} /></button>
+                                  <button title="Delete rule" onClick={() => setOptRules(optRules.filter((_, i) => i !== ri))} className="text-slate-600 hover:text-red-400"><Trash2 size={12} /></button>
+                                </div>
+                              </div>
+
+                              {/* Row 2: Target */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs mb-2">
+                                <span className="text-slate-500 shrink-0">for</span>
+                                <select value={rule.targetType} onChange={e => { const r = [...optRules]; r[ri].targetType = e.target.value as any; if (e.target.value === 'HOST' || e.target.value === 'INTERNET') r[ri].groupOrUser = ''; setOptRules(r); }}
+                                  className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1.5 focus:outline-none">
+                                  {Object.entries(targetLabels).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                                </select>
+
+                                {rule.targetType === 'GROUP' ? (
+                                  <select value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
+                                    className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1.5 focus:outline-none min-w-[80px]">
+                                    {optGroups.length > 0 ? optGroups.map(g => <option key={g.name} value={g.name}>{g.name}</option>) : <option value="">Create a group first ↑</option>}
+                                  </select>
+                                ) : rule.targetType === 'USER' ? (
+                                  <div className="flex gap-1 items-center flex-wrap">
+                                    <select value="" onChange={e => { if (e.target.value) { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); } }}
+                                      className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1.5 focus:outline-none max-w-[140px]">
+                                      <option value="">Pick from log…</option>
+                                      {detectedUsers.map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
+                                    <span className="text-slate-600 text-[10px]">or</span>
+                                    <input type="text" value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
+                                      onBlur={e => { const v = e.target.value.trim(); if (v && !customUsers.includes(v) && !logUsers.includes(v)) setCustomUsers([...customUsers, v]); }}
+                                      placeholder="type a name"
+                                      className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1.5 font-mono-brand focus:outline-none w-28 placeholder:text-slate-700" />
+                                  </div>
+                                ) : rule.targetType === 'HOST' ? (
+                                  <div className="flex gap-1 items-center flex-wrap">
+                                    {detectedHosts.length > 0 && (
+                                      <select value="" onChange={e => { if (e.target.value) { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); } }}
+                                        className="bg-[#111827] border border-slate-800 text-[11px] text-slate-400 px-2 py-1.5 focus:outline-none max-w-[140px]">
+                                        <option value="">Pick from log…</option>
+                                        {detectedHosts.map(h => <option key={h} value={h}>{h}</option>)}
+                                      </select>
+                                    )}
+                                    {detectedHosts.length > 0 && <span className="text-slate-600 text-[10px]">or</span>}
+                                    <input type="text" value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
+                                      placeholder="type a hostname"
+                                      className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1.5 font-mono-brand focus:outline-none w-28 placeholder:text-slate-700" />
+                                  </div>
+                                ) : (
+                                  <input type="text" value={rule.groupOrUser} onChange={e => { const r = [...optRules]; r[ri].groupOrUser = e.target.value; setOptRules(r); }}
+                                    placeholder="192.168.1.*"
+                                    className="bg-[#111827] border border-slate-800 text-[11px] text-white px-2 py-1.5 font-mono-brand focus:outline-none w-32 placeholder:text-slate-700" />
+                                )}
+                              </div>
+
+                              {/* Hint: suggest group for multiple similar rules */}
+                              {(() => {
+                                const sameTypeFeature = optRules.filter((r, i) => i !== ri && r.type === rule.type && r.feature === rule.feature && r.targetType === 'USER');
+                                return sameTypeFeature.length >= 1 && rule.targetType === 'USER' ? (
+                                  <p className="text-[10px] text-amber-400/70 mb-2">💡 Tip: You have {sameTypeFeature.length + 1} similar rules for individual users. Consider creating a <strong>Group</strong> instead — add users to a group in Step 2, then use one rule for the whole group.</p>
+                                ) : null;
+                              })()}
+
+                              {/* Version filter — admin control, not license type */}
+                              <details className="text-[10px] mb-2">
+                                <summary className="text-slate-600 cursor-pointer hover:text-slate-400">
+                                  {rule.versionFilter ? <span className="text-purple-400">Version {rule.versionFilter} only</span> : 'Version restriction (optional)'}
+                                </summary>
+                                <div className="mt-1 pl-2 border-l border-slate-800">
+                                  <p className="text-slate-600 mb-1">SW licenses aren't version-specific, but admins can control which version users are allowed to launch — useful for controlled rollouts.</p>
+                                  <div className="flex items-center gap-2">
+                                    <input type="text" value={rule.versionFilter} onChange={e => { const r = [...optRules]; r[ri].versionFilter = e.target.value.replace(/[^0-9]/g, ''); setOptRules(r); }}
+                                      placeholder="e.g. 2025"
+                                      className="bg-[#111827] border border-slate-800 text-purple-400 text-[10px] px-2 py-0.5 w-20 font-mono-brand focus:outline-none placeholder:text-slate-700" />
+                                    {rule.versionFilter && <button onClick={() => { const r = [...optRules]; r[ri].versionFilter = ''; setOptRules(r); }} className="text-slate-600 hover:text-red-400">Clear</button>}
+                                  </div>
+                                </div>
+                              </details>
+
+                              {/* Hint */}
+                              <p className="text-[10px] text-slate-600 mb-2">{desc?.hint}</p>
+
+                              {/* Generated syntax preview */}
+                              <div className="px-2 py-1 bg-[#111827] border border-slate-800/50 text-[10px] font-mono-brand text-slate-500 overflow-x-auto">
+                                {(() => {
+                                  const feat = rule.versionFilter ? `${rule.feature}:SWVERSION=${rule.versionFilter}` : rule.feature;
+                                  return (rule.type === 'MAX' || rule.type === 'RESERVE')
+                                    ? `${rule.type} ${rule.count} ${feat} ${rule.targetType} ${rule.groupOrUser || '???'}`
+                                    : `${rule.type} ${feat} ${rule.targetType} ${rule.groupOrUser || '???'}`;
+                                })()}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Scroll target for new rules */}
+                        <div ref={rulesEndRef} />
+
+                        {/* Quick-add buttons */}
+                        <div className="flex flex-wrap gap-2">
+                          <button onClick={() => addRuleAndScroll({ type: 'RESERVE', count: 1, feature: detectedFeatures[0] || 'solidworks', groupOrUser: optGroups[0]?.name || '', targetType: optGroups.length > 0 ? 'GROUP' : 'USER', versionFilter: '' })}
+                            className="py-2 px-3 border border-dashed border-slate-700 text-[11px] text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors flex items-center gap-1">
+                            <Plus size={12} /> Guarantee seats
+                          </button>
+                          <button onClick={() => addRuleAndScroll({ type: 'MAX', count: 3, feature: detectedFeatures[0] || 'solidworks', groupOrUser: optGroups[0]?.name || '', targetType: optGroups.length > 0 ? 'GROUP' : 'USER', versionFilter: '' })}
+                            className="py-2 px-3 border border-dashed border-slate-700 text-[11px] text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors flex items-center gap-1">
+                            <Plus size={12} /> Cap usage
+                          </button>
+                          <button onClick={() => addRuleAndScroll({ type: 'EXCLUDE', count: 1, feature: detectedFeatures[0] || 'solidworks', groupOrUser: '', targetType: 'USER', versionFilter: '' })}
+                            className="py-2 px-3 border border-dashed border-slate-700 text-[11px] text-slate-500 hover:text-[#46b6e3] hover:border-[#1871bd]/50 transition-colors flex items-center gap-1">
+                            <Plus size={12} /> Block a user
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Right column: Preview + Feature Reference */}
+                  {/* Right column: Preview + Reference */}
                   <div className="space-y-6">
                     {/* Live Preview */}
-                    <div className="border border-slate-800 bg-[#111827]">
+                    <div className="border border-slate-800 bg-[#111827] lg:sticky lg:top-4">
                       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-[#0c1220]">
-                        <span className="text-xs text-slate-400 font-mono-brand">sw_d.opt</span>
+                        <div>
+                          <span className="text-xs text-slate-400 font-mono-brand">sw_d.opt</span>
+                          <span className="text-[10px] text-slate-600 ml-2">— live preview</span>
+                        </div>
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => { navigator.clipboard.writeText(optionsText); setOptCopied(true); setTimeout(() => setOptCopied(false), 2000); }}
-                            className="text-[11px] text-slate-500 hover:text-white flex items-center gap-1"
-                          >
+                          <button onClick={() => { navigator.clipboard.writeText(optionsText); setOptCopied(true); setTimeout(() => setOptCopied(false), 2000); }}
+                            className="text-[11px] text-slate-500 hover:text-white flex items-center gap-1">
                             <Copy size={12} /> {optCopied ? 'Copied!' : 'Copy'}
                           </button>
-                          <button
-                            onClick={() => {
-                              const blob = new Blob([optionsText], { type: 'text/plain' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url; a.download = 'sw_d.opt'; a.click();
-                              URL.revokeObjectURL(url);
-                            }}
-                            className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1"
-                          >
+                          <button onClick={() => {
+                            const blob = new Blob([optionsText], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a'); a.href = url; a.download = 'sw_d.opt'; a.click();
+                            URL.revokeObjectURL(url);
+                          }} className="text-[11px] text-[#1871bd] hover:text-[#46b6e3] flex items-center gap-1">
                             <Download size={12} /> Download
                           </button>
                         </div>
@@ -1885,33 +2489,55 @@ export function App() {
                       <pre className="p-4 text-xs font-mono-brand text-slate-300 overflow-x-auto whitespace-pre leading-relaxed max-h-[400px] overflow-y-auto">
                         {optionsText}
                       </pre>
+                      <div className="px-5 py-3 border-t border-slate-800 bg-[#0c1220]">
+                        <p className="text-[10px] text-slate-600">After downloading, place this file alongside <span className="font-mono-brand">sw_d.lic</span> in your license manager's <span className="font-mono-brand">\licenses\</span> folder. Then stop and restart the SolidNetWork License Manager service for changes to take effect.</p>
+                      </div>
                     </div>
 
                     {/* Detected Features from Log */}
                     <div className="border border-slate-800 bg-[#111827] p-5">
-                      <h3 className="text-sm font-semibold text-slate-300 mb-3">Detected Features</h3>
+                      <h3 className="text-xs font-semibold text-slate-400 mb-3">Features Detected in Your Log</h3>
                       <div className="space-y-1">
                         {detectedFeatures.map(f => (
-                          <div key={f} className="flex items-center justify-between text-xs py-1 border-b border-slate-800/30">
+                          <div key={f} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-800/30">
                             <span className="font-mono-brand text-[#46b6e3]">{f}</span>
-                            <span className="text-slate-500">{SNL_FEATURES[f.toLowerCase()] || 'Unknown'}</span>
+                            <span className="text-slate-500">{SNL_FEATURES[f.toLowerCase()] || 'Unknown feature'}</span>
                           </div>
                         ))}
                       </div>
+                      <p className="text-[10px] text-slate-600 mt-3">These are the feature codes found in your log file. Use them in rules above to control access.</p>
                     </div>
 
-                    {/* Quick reference */}
-                    <div className="border border-slate-800 bg-[#111827] p-5">
-                      <h3 className="text-sm font-semibold text-slate-300 mb-3">Command Reference</h3>
-                      <div className="space-y-2 text-[11px]">
-                        <div><span className="font-mono-brand text-amber-400">TIMEOUTALL</span> <span className="text-slate-500">— Idle time (seconds) before license is returned. Min 900 (15m).</span></div>
-                        <div><span className="font-mono-brand text-amber-400">GROUP</span> <span className="text-slate-500">— Define a named group of users.</span></div>
-                        <div><span className="font-mono-brand text-amber-400">MAX</span> <span className="text-slate-500">— Limit max licenses a group/user can hold.</span></div>
-                        <div><span className="font-mono-brand text-amber-400">RESERVE</span> <span className="text-slate-500">— Reserve licenses for a group/user (others can't access).</span></div>
-                        <div><span className="font-mono-brand text-amber-400">INCLUDE</span> <span className="text-slate-500">— Only allow specific group/user to use a feature.</span></div>
-                        <div><span className="font-mono-brand text-amber-400">EXCLUDE</span> <span className="text-slate-500">— Block specific group/user from a feature.</span></div>
+                    {/* Help & Resources (collapsible) */}
+                    <details className="border border-slate-800 bg-[#111827]">
+                      <summary className="px-5 py-3 text-xs font-semibold text-slate-400 cursor-pointer hover:text-slate-300 flex items-center gap-2">
+                        <HelpCircle size={13} className="text-[#1871bd]" /> Help & Syntax Reference
+                      </summary>
+                      <div className="px-5 pb-4 space-y-3">
+                        <div className="space-y-2 text-[11px]">
+                          <p className="text-slate-500 text-[10px] mb-2">Each rule in the options file is a single line. Here's what each command does:</p>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">TIMEOUTALL 3600</span><p className="text-slate-500 mt-0.5">Return ALL idle licenses after 3600 seconds (1 hour). Minimum: 900 (15 min).</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">TIMEOUT solidworks 1800</span><p className="text-slate-500 mt-0.5">Override global timeout for a specific feature only.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">GROUP engineering user1 user2 user3</span><p className="text-slate-500 mt-0.5">Create a named group. Use Windows login names. No spaces in group name.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">RESERVE 2 solidworks GROUP engineering</span><p className="text-slate-500 mt-0.5">Set aside 2 SOLIDWORKS seats exclusively for the engineering group.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">MAX 3 solidworks GROUP interns</span><p className="text-slate-500 mt-0.5">The interns group can use at most 3 SOLIDWORKS seats at once.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">EXCLUDE solidworks USER john</span><p className="text-slate-500 mt-0.5">Block user john from checking out SOLIDWORKS entirely.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">INCLUDE solidworks:SWVERSION=2025 USER jane</span><p className="text-slate-500 mt-0.5">Only jane can use SOLIDWORKS 2025 specifically. Others can use other versions.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">RESERVE 1 solidworks HOST workstation1</span><p className="text-slate-500 mt-0.5">Reserve a license for a specific machine by its network hostname.</p></div>
+                          <div className="p-2 bg-[#0c1220] border border-slate-800"><span className="font-mono-brand text-amber-400">EXCLUDE solidworks INTERNET 10.0.2.*</span><p className="text-slate-500 mt-0.5">Block an entire subnet from using a feature. Wildcards allowed.</p></div>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-800/50 space-y-1.5">
+                          <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">SolidWorks KB Articles</p>
+                          <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000104415" target="_blank" rel="noopener" className="block text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Reserve licenses for a PC, host, user, or group →</a>
+                          <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000117182" target="_blank" rel="noopener" className="block text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Control licenses by location / IP subnet →</a>
+                          <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000120029" target="_blank" rel="noopener" className="block text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Allocate license pools across groups →</a>
+                          <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000105107" target="_blank" rel="noopener" className="block text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Set static TCP port for firewall →</a>
+                          <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000109458" target="_blank" rel="noopener" className="block text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Preserve log history across restarts →</a>
+                          <a href="https://support.3ds.com/knowledge-base/?q=docid:QA00000117707" target="_blank" rel="noopener" className="block text-[10px] text-[#1871bd] hover:text-[#46b6e3]">Troubleshooting files reference →</a>
+                        </div>
                       </div>
-                    </div>
+                    </details>
                   </div>
                 </div>
               </div>
